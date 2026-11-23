@@ -1,0 +1,122 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1440" height="480" viewBox="0 0 1440 480" role="img" aria-labelledby="title desc">
+  <title id="title">Matter Theatre — Composable Physics Show built on Matter.js and PixiJS</title>
+  <desc id="desc">Original dark theatrical physics illustration showing orbital trajectories, a luminous pendulum wave, and a five-sphere Newton's cradle beside editorial typography.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#070A12"/>
+      <stop offset="0.52" stop-color="#0E1526"/>
+      <stop offset="1" stop-color="#131B31"/>
+    </linearGradient>
+    <radialGradient id="stageGlow" cx="75%" cy="48%" r="48%">
+      <stop offset="0" stop-color="#38BDF8" stop-opacity="0.22"/>
+      <stop offset="0.45" stop-color="#818CF8" stop-opacity="0.14"/>
+      <stop offset="1" stop-color="#070A12" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="amberGlow" cx="84%" cy="32%" r="28%">
+      <stop offset="0" stop-color="#F59E0B" stop-opacity="0.22"/>
+      <stop offset="1" stop-color="#070A12" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="goldText" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#FDE68A"/>
+      <stop offset="0.55" stop-color="#38BDF8"/>
+      <stop offset="1" stop-color="#C084FC"/>
+    </linearGradient>
+    <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
+      <path d="M40 0H0V40" fill="none" stroke="#93C5FD" stroke-opacity="0.04" stroke-width="1"/>
+    </pattern>
+    <filter id="glow" x="-40%" y="-40%" width="180%" height="180%">
+      <feGaussianBlur stdDeviation="6" result="b"/>
+      <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>
+
+  <rect width="1440" height="480" rx="20" fill="url(#bg)"/>
+  <rect width="1440" height="480" rx="20" fill="url(#stageGlow)"/>
+  <rect width="1440" height="480" rx="20" fill="url(#amberGlow)"/>
+  <rect width="1440" height="480" rx="20" fill="url(#grid)"/>
+
+  <!-- Proscenium frame -->
+  <rect x="20" y="20" width="1400" height="440" rx="14" fill="none" stroke="#94A3B8" stroke-opacity="0.18"/>
+  <path d="M44 44h44M44 44v44M1396 44h-44M1396 44v44M44 436h44M44 436v-44M1396 436h-44M1396 436v-44" fill="none" stroke="#F59E0B" stroke-opacity="0.5" stroke-width="1.5"/>
+
+  <!-- Left editorial column -->
+  <g font-family="Segoe UI, -apple-system, BlinkMacSystemFont, sans-serif">
+    <text x="80" y="96" fill="#FCD34D" font-family="Consolas, monospace" font-size="14" font-weight="700" letter-spacing="3.5">COMPOSABLE PHYSICS SHOW · 物理剧场</text>
+    <text x="76" y="198" fill="#F8FAFC" font-size="84" font-weight="800" letter-spacing="-2.5">Matter</text>
+    <text x="76" y="280" fill="url(#goldText)" font-size="84" font-weight="800" letter-spacing="-2.5">Theatre</text>
+    <text x="80" y="330" fill="#CBD5E1" font-size="23">Only physics moves things. Set it up, let go, and watch.</text>
+    <path d="M80 364H650" stroke="#475569" stroke-opacity="0.6"/>
+    <text x="80" y="402" fill="#93C5FD" font-family="Consolas, monospace" font-size="13.5" font-weight="700" letter-spacing="2">60 TEMPLATES · 11 FAMILIES · 5 LOOKS · 7 SEGUES · 120 HZ</text>
+  </g>
+
+  <!-- Right kinetic stage artwork -->
+  <!-- Kepler orbital system -->
+  <g transform="translate(1065, 224)">
+    <ellipse cx="0" cy="0" rx="224" ry="124" transform="rotate(-14)" fill="none" stroke="#38BDF8" stroke-opacity="0.22" stroke-width="1.4"/>
+    <ellipse cx="0" cy="0" rx="164" ry="86" transform="rotate(-14)" fill="none" stroke="#A78BFA" stroke-opacity="0.28" stroke-width="1.4" stroke-dasharray="6 8"/>
+    <ellipse cx="0" cy="0" rx="102" ry="52" transform="rotate(-14)" fill="none" stroke="#FBBF24" stroke-opacity="0.32" stroke-width="1.3"/>
+    <!-- Central body -->
+    <circle cx="0" cy="0" r="24" fill="#1E293B" stroke="#FDE68A" stroke-width="2.5" filter="url(#glow)"/>
+    <circle cx="0" cy="0" r="10" fill="#FDE68A" opacity="0.85"/>
+    <!-- Orbiting glowing bodies with motion trails -->
+    <path d="M-190 78 Q-120 112 -30 116" fill="none" stroke="#38BDF8" stroke-width="4" stroke-linecap="round" opacity="0.55"/>
+    <circle cx="-190" cy="78" r="11" fill="#38BDF8" filter="url(#glow)"/>
+
+    <path d="M168 -74 Q112 -104 42 -106" fill="none" stroke="#C084FC" stroke-width="3.5" stroke-linecap="round" opacity="0.55"/>
+    <circle cx="168" cy="-74" r="9.5" fill="#C084FC" filter="url(#glow)"/>
+
+    <path d="M98 16 Q72 44 28 54" fill="none" stroke="#34D399" stroke-width="3" stroke-linecap="round" opacity="0.6"/>
+    <circle cx="98" cy="16" r="8" fill="#34D399" filter="url(#glow)"/>
+
+    <circle cx="-116" cy="-58" r="7" fill="#F472B6" filter="url(#glow)"/>
+  </g>
+
+  <!-- Suspended Pendulum Wave / Cradle bar (top-right) -->
+  <g stroke-linecap="round">
+    <line x1="820" y1="68" x2="1280" y2="68" stroke="#64748B" stroke-width="3"/>
+    <!-- Strings & bobs forming a harmonic wave -->
+    <line x1="860" y1="68" x2="824" y2="176" stroke="#94A3B8" stroke-opacity="0.45" stroke-width="1.4"/>
+    <circle cx="824" cy="176" r="12" fill="#38BDF8" filter="url(#glow)"/>
+
+    <line x1="920" y1="68" x2="906" y2="162" stroke="#94A3B8" stroke-opacity="0.45" stroke-width="1.4"/>
+    <circle cx="906" cy="162" r="11" fill="#60A5FA"/>
+
+    <line x1="980" y1="68" x2="980" y2="146" stroke="#94A3B8" stroke-opacity="0.45" stroke-width="1.4"/>
+    <circle cx="980" cy="146" r="10.5" fill="#818CF8"/>
+
+    <line x1="1040" y1="68" x2="1052" y2="132" stroke="#94A3B8" stroke-opacity="0.45" stroke-width="1.4"/>
+    <circle cx="1052" cy="132" r="10" fill="#A78BFA"/>
+
+    <line x1="1100" y1="68" x2="1124" y2="122" stroke="#94A3B8" stroke-opacity="0.45" stroke-width="1.4"/>
+    <circle cx="1124" cy="122" r="10" fill="#C084FC"/>
+
+    <line x1="1160" y1="68" x2="1194" y2="138" stroke="#94A3B8" stroke-opacity="0.45" stroke-width="1.4"/>
+    <circle cx="1194" cy="138" r="11" fill="#F472B6"/>
+
+    <line x1="1220" y1="68" x2="1268" y2="166" stroke="#94A3B8" stroke-opacity="0.45" stroke-width="1.4"/>
+    <circle cx="1268" cy="166" r="12" fill="#FBBF24" filter="url(#glow)"/>
+  </g>
+
+  <!-- Five Look Swatches Strip (bottom-right) -->
+  <g transform="translate(810, 382)" font-family="Consolas, monospace" font-size="11.5" font-weight="700">
+    <rect x="0" y="0" width="96" height="30" rx="15" fill="#0F172A" stroke="#38BDF8" stroke-opacity="0.7"/>
+    <circle cx="18" cy="15" r="4.5" fill="#38BDF8"/>
+    <text x="32" y="19" fill="#E0F2FE">NEON</text>
+
+    <rect x="108" y="0" width="98" height="30" rx="15" fill="#2A241E" stroke="#D6C7B2" stroke-opacity="0.7"/>
+    <circle cx="126" cy="15" r="4.5" fill="#E7D8C3"/>
+    <text x="140" y="19" fill="#F5EDE2">PAPER</text>
+
+    <rect x="218" y="0" width="84" height="30" rx="15" fill="#1C1917" stroke="#A8A29E" stroke-opacity="0.7"/>
+    <circle cx="236" cy="15" r="4.5" fill="#D6D3D1"/>
+    <text x="250" y="19" fill="#E7E5E4">INK</text>
+
+    <rect x="314" y="0" width="98" height="30" rx="15" fill="#17253B" stroke="#93C5FD" stroke-opacity="0.7"/>
+    <circle cx="332" cy="15" r="4.5" fill="#67E8F9"/>
+    <text x="346" y="19" fill="#DBEAFE">GLASS</text>
+
+    <rect x="424" y="0" width="114" height="30" rx="15" fill="#2B1B2E" stroke="#FBBF24" stroke-opacity="0.8"/>
+    <circle cx="442" cy="15" r="4.5" fill="#FBBF24"/>
+    <text x="456" y="19" fill="#FEF3C7">CARTOON</text>
+  </g>
+</svg>
