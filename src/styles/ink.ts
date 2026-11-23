@@ -50,6 +50,7 @@ export const ink: StyleDef = {
   trail: { kind: 'brush', width: 18, alpha: 0.3, length: 60, blend: 'normal' },
   particleKinds: ['blot', 'mote'],
   particleBlend: 'normal',
+  water: { color: 0x55615f, alpha: 0.16 },
 
   drawBody(g, shapes, look) {
     const c = look.color;

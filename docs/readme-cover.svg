@@ -46,7 +46,7 @@
     <text x="76" y="280" fill="url(#goldText)" font-size="84" font-weight="800" letter-spacing="-2.5">Theatre</text>
     <text x="80" y="330" fill="#CBD5E1" font-size="23">Only physics moves things. Set it up, let go, and watch.</text>
     <path d="M80 364H650" stroke="#475569" stroke-opacity="0.6"/>
-    <text x="80" y="402" fill="#93C5FD" font-family="Consolas, monospace" font-size="13.5" font-weight="700" letter-spacing="2">60 TEMPLATES · 11 FAMILIES · 5 LOOKS · 7 SEGUES · 120 HZ</text>
+    <text x="80" y="402" fill="#93C5FD" font-family="Consolas, monospace" font-size="13.5" font-weight="700" letter-spacing="2">63 TEMPLATES · 12 FAMILIES · 5 LOOKS · 7 SEGUES · 120 HZ</text>
   </g>
 
   <!-- Right kinetic stage artwork -->

@@ -1,57 +1,6 @@
-import Matter from 'matter-js';
 import { W, type SceneDef } from '../core/types';
 import { easeInOutSine } from '../core/ease';
-import { Bodies, Body, Composite, Constraint, circle, dolly, ground, open, polygon, rect, release, staticCircle, staticRect, wallPath, arcPts, type MBody, type Pt } from './kit';
-
-/** Falling Choir — shapes released together from heights tuned by h = ½gt² land as an arpeggio. */
-const choir: SceneDef = {
-  id: 'falling-choir',
-  theme: 'gravity',
-  title: { zh: '落体合唱', en: 'Falling Choir' },
-  law: { zh: '自由落体 h = ½gt²', en: 'Free fall, h = ½gt²' },
-  blurb: { zh: '十二个物体同时松手，高度按 h = ½gt² 计算，依次落地，像琶音一样点亮琴键。', en: 'Twelve shapes released at once from tuned heights land in sequence, an arpeggio on the keys.' },
-  duration: 10,
-  energy: 2,
-  endState: 'settle',
-  canDrop: true,
-  setup(ctx) {
-    const { r } = ctx;
-    const n = 12;
-    const keyY = 900;
-    const keyW = 118;
-    const x0 = W / 2 - ((n - 1) * (keyW + 10)) / 2;
-    const glow = new Array(n).fill(0);
-    const keys: MBody[] = [];
-    for (let i = 0; i < n; i++) keys.push(staticRect(ctx, x0 + i * (keyW + 10), keyY, keyW, 18, 'structure', 0, { restitution: 0.4 }));
-    r.drawBack((g, dt) => {
-      for (let i = 0; i < n; i++) {
-        glow[i] = Math.max(0, glow[i] - dt * 0.9);
-        const c = r.color('hero', i / (n - 1));
-        const x = x0 + i * (keyW + 10) - keyW / 2;
-        g.rect(x, keyY + 12, keyW, 150).fill({ color: c, alpha: 0.05 + glow[i] * 0.4 });
-        g.rect(x, keyY - 9 - glow[i] * 8, keyW, 4).fill({ color: c, alpha: 0.15 + glow[i] * 0.85 });
-      }
-    });
-    const held: MBody[] = [];
-    for (let i = 0; i < n; i++) {
-      const t = 0.42 + i * 0.16;
-      const y = keyY - 9 - 0.5 * 1000 * t * t - 26;
-      const x = x0 + i * (keyW + 10);
-      const view = { role: 'hero' as const, hue: i / (n - 1), trail: 1.2 };
-      const phys = { isStatic: true, restitution: 0.5, friction: 0.2, frictionAir: 0 };
-      const kind = i % 3;
-      held.push(kind === 0 ? circle(ctx, x, y, 24, view, phys) : kind === 1 ? polygon(ctx, x, y, 3, 30, view, phys) : rect(ctx, x, y, 44, 44, view, phys));
-    }
-    Matter.Events.on(ctx.engine, 'collisionStart', (e) => {
-      for (const p of e.pairs) {
-        const k = keys.indexOf(p.bodyA) >= 0 ? keys.indexOf(p.bodyA) : keys.indexOf(p.bodyB);
-        if (k >= 0) glow[k] = 1;
-      }
-    });
-    dolly(ctx, W / 2, 560, 1.0, 1.04, W / 2, 600);
-    return { entry: { x: W / 2, y: 500 }, floors: keys, enter: () => release(...held) };
-  },
-};
+import { Bodies, Body, Composite, Constraint, arcPts, ball, compound, dolly, ground, halt, open, polygon, rect, release, staticCircle, staticRect, turn, wallBody, wallPath, type MBody, type Pt } from './kit';
 
 /** Brachistochrone — line, arc and cycloid race between the same two points; the cycloid wins. */
 const brachistochrone: SceneDef = {
@@ -121,10 +70,12 @@ const brachistochrone: SceneDef = {
         const off = rad + thick / 2;
         Composite.add(world, Bodies.rectangle((a.x + b.x) / 2 + ox * off, (a.y + b.y) / 2 + oy * off, L + 2, thick, { isStatic: true, angle: Math.atan2(ty, tx), friction: 0, collisionFilter: { category: cat, mask: cat } }));
       }
-      balls.push(circle(ctx, A.x + 0.5, A.y - 0.5, rad, { role: 'hero', hue: i / 2, trail: 2.2, weight: 1, impacts: false }, { isStatic: true, friction: 0, frictionAir: 0, restitution: 0, collisionFilter: { category: cat, mask: cat } }));
+      balls.push(ball(ctx, A.x + 0.5, A.y - 0.5, rad, { role: 'hero', hue: i / 2, trail: 2.2, weight: 1, impacts: false }, { isStatic: true, friction: 0, frictionAir: 0, restitution: 0, collisionFilter: { category: cat, mask: cat } }));
     });
+    // Looks are made once: a hand-drawn look takes its wobble from the look's seed.
+    const looks = paths.map((_p, i) => r.look('hero', i / 2));
     r.drawBack((g) => {
-      paths.forEach((pts, i) => ctx.style.drawLink(g, pts, r.look('hero', i / 2), 3));
+      paths.forEach((pts, i) => ctx.style.drawLink(g, pts, looks[i], 3));
       g.rect(A.x - 3, A.y - 60, 6, 80).fill({ color: ctx.style.structure, alpha: 0.7 });
       g.rect(B.x - 2, B.y - 120, 4, 160).fill({ color: ctx.style.accentColor, alpha: 0.8 });
     });
@@ -140,60 +91,6 @@ const brachistochrone: SceneDef = {
             r.fx.ring({ x: B.x, y: b.position.y, r1: 70 - arrived.length * 14, width: 2, color: r.color('hero', i / 2), life: 0.7 });
           }
         }),
-    };
-  },
-};
-
-/** Friction Glide — identical strikers push identical pucks; rougher lanes stop them sooner. */
-const frictionGlide: SceneDef = {
-  id: 'friction-glide',
-  theme: 'gravity',
-  title: { zh: '摩擦滑行', en: 'Friction Glide' },
-  law: { zh: '摩擦力做功', en: 'Work done by friction' },
-  blurb: { zh: '五个相同的摆锤给五块相同的滑块同样的一击，唯一的不同是地面的粗糙程度。', en: 'Identical strikers give identical pucks the same push; only the lanes differ in roughness.' },
-  duration: 11,
-  energy: 2,
-  endState: 'settle',
-  setup(ctx) {
-    const { r, world } = ctx;
-    const lanes = 5;
-    const mus = [0.018, 0.026, 0.038, 0.056, 0.085];
-    const pucks: MBody[] = [];
-    const bobs: MBody[] = [];
-    const stops: (Pt | null)[] = new Array(lanes).fill(null);
-    const startX = 352;
-    for (let i = 0; i < lanes; i++) {
-      const y = 330 + i * 140;
-      staticRect(ctx, 1070, y + 7, 1500, 14, 'structure', 0, { friction: 1, frictionStatic: 0 });
-      pucks.push(rect(ctx, startX, y - 18, 64, 36, { role: 'hero', hue: i / (lanes - 1), trail: 1.5, weight: 1 }, { friction: mus[i], frictionStatic: 0, frictionAir: 0, density: 0.002, restitution: 0.6, chamfer: { radius: 14 } }));
-      const pivot = { x: 250, y: y - 26 - 230 };
-      const ang = -1.3;
-      const bob = circle(ctx, pivot.x + Math.sin(ang) * 230, pivot.y + Math.cos(ang) * 230, 22, { role: 'accent', weight: 1, impacts: false }, { isStatic: true, density: 0.012, frictionAir: 0, restitution: 0.8 });
-      const c = Constraint.create({ pointA: pivot, bodyB: bob, length: 230, stiffness: 1 });
-      Composite.add(world, c);
-      r.constraint(c, 'structure', 1.5);
-      bobs.push(bob);
-      r.drawBack((g) => {
-        const k = i / (lanes - 1);
-        for (let x = 320; x < 1810; x += 24 - k * 14) g.rect(x, y + 1, 2, 3 + k * 4).fill({ color: ctx.style.structure, alpha: 0.18 + k * 0.25 });
-      });
-    }
-    r.drawFront((g) => {
-      const pts = stops.filter((p): p is Pt => !!p);
-      pts.forEach((p) => g.circle(p.x, p.y, 5).fill({ color: ctx.style.accentColor, alpha: 0.9 }));
-      if (pts.length >= 2) ctx.style.drawLink(g, pts, r.look('accent'), 1.5);
-    });
-    dolly(ctx, W / 2, 600, 0.98, 1.02);
-    let t0 = -1;
-    return {
-      entry: { x: startX, y: 600 },
-      enter: () => release(...bobs),
-      step: (t) => {
-        if (t0 < 0) t0 = t;
-        pucks.forEach((p, i) => {
-          if (!stops[i] && t - t0 > 1 && p.speed < 0.05 && p.position.x > startX + 20) stops[i] = { x: p.position.x + 32, y: p.position.y - 30 };
-        });
-      },
     };
   },
 };
@@ -217,7 +114,7 @@ const projectileFan: SceneDef = {
     const balls: MBody[] = [];
     const n = 12;
     for (let i = 0; i < n; i++) {
-      const b = circle(ctx, origin.x, origin.y - i * 0.01, 14, { role: 'hero', hue: i / (n - 1), trail: 4.5, weight: 1 }, { isStatic: true, restitution: 0.1, friction: 0.4, frictionAir: 0 });
+      const b = ball(ctx, origin.x, origin.y - i * 0.01, 14, { role: 'hero', hue: i / (n - 1), trail: 4.5, weight: 1 }, { isStatic: true, restitution: 0.1, friction: 0.4, frictionAir: 0 });
       b.collisionFilter.group = -2;
       balls.push(b);
     }
@@ -241,60 +138,6 @@ const projectileFan: SceneDef = {
   },
 };
 
-/** Tumbling Room — the room turns over a quarter at a time; its furniture slides and tumbles. */
-const tumblingRoom: SceneDef = {
-  id: 'tumbling-room',
-  theme: 'gravity',
-  title: { zh: '翻转房间', en: 'Tumbling Room' },
-  law: { zh: '转动参考系中的重力', en: 'Gravity in a turning room' },
-  blurb: { zh: '房间每次翻转九十度，重力随之换向，房里的"家具"一次次滑落、翻滚、重新堆叠。', en: 'The room turns a quarter at a time; its furniture slides, tumbles and restacks.' },
-  duration: 12,
-  energy: 3,
-  endState: 'settle',
-  presettle: 1,
-  setup(ctx) {
-    const { engine, camera, tl, rng } = ctx;
-    const cx = W / 2;
-    const cy = 540;
-    const s = 640;
-    staticRect(ctx, cx, cy - s / 2 - 12, s + 48, 24, 'structure');
-    staticRect(ctx, cx, cy + s / 2 + 12, s + 48, 24, 'structure');
-    staticRect(ctx, cx - s / 2 - 12, cy, 24, s, 'structure');
-    staticRect(ctx, cx + s / 2 + 12, cy, 24, s, 'structure');
-    const pieces: [number, number, number][] = [[150, 60, 0.05], [90, 90, 0.25], [60, 140, 0.45], [120, 40, 0.6], [70, 70, 0.8], [40, 40, 0.95], [100, 30, 0.35]];
-    let x = cx - s / 2 + 40;
-    for (const [w, h, hue] of pieces) {
-      rect(ctx, x + w / 2, cy + s / 2 - h / 2 - 2, w, h, { role: 'hero', hue, weight: 1 }, { friction: 0.5, restitution: 0.15, density: 0.002 });
-      x += w + 8;
-      if (x > cx + s / 2 - 120) x = cx - s / 2 + 60;
-    }
-    circle(ctx, cx + 120, cy + s / 2 - 120, 34, { role: 'accent', weight: 1 }, { friction: 0.05, restitution: 0.3 });
-    void rng;
-    const setPhi = (a: number) => {
-      engine.gravity.x = Math.sin(a);
-      engine.gravity.y = Math.cos(a);
-      camera.angle = camera.targetAngle = a;
-    };
-    camera.set(cx, cy, 1.0);
-    camera.stiffness = 0.5;
-    let phi = 0;
-    const turn = (at: number) =>
-      tl.during(at, at + 1.3, (p) => {
-        setPhi(phi + (Math.PI / 2) * easeInOutSine(p));
-        if (p >= 1) phi += Math.PI / 2;
-      });
-    return {
-      entry: { x: cx, y: cy },
-      enter: () => {
-        const t0 = tl.t;
-        turn(t0 + 0.2);
-        turn(t0 + 2.6);
-        turn(t0 + 5.0);
-      },
-    };
-  },
-};
-
 /** Trapdoor Shelves — three hinged trapdoors open in turn and a cargo of shapes cascades down. */
 const trapdoors: SceneDef = {
   id: 'trapdoor-shelf',
@@ -305,9 +148,10 @@ const trapdoors: SceneDef = {
   duration: 11,
   energy: 3,
   endState: 'settle',
-  presettle: 0.8,
+  presettle: 2,
   setup(ctx) {
     const { r, rng, tl, world } = ctx;
+    ctx.engine.constraintIterations = 8;
     const latches: MBody[] = [];
     const w = 340;
     // Each shelf sits under the spill of the one above; doors hinge on the left, latch on the right.
@@ -320,14 +164,15 @@ const trapdoors: SceneDef = {
       for (const side of i === 0 ? [-1, 1] : [1]) staticRect(ctx, s.x + side * (w / 2 + 12), s.y - 80, 14, 140, 'structure');
       const door = rect(ctx, s.x, s.y, w, 16, { role: 'debris', hue: i / 2 }, { density: 0.003, friction: 0.3 });
       Composite.add(world, Constraint.create({ pointA: { x: s.x - w / 2, y: s.y }, bodyB: door, pointB: { x: -w / 2, y: 0 }, length: 0, stiffness: 1 }));
-      staticCircle(ctx, s.x - w / 2, s.y, 7, 'structure');
+      // The hinge pin is drawn, not felt: the door turns about the constraint.
+      staticCircle(ctx, s.x - w / 2, s.y, 7, 'structure', { collisionFilter: { group: 0, category: 0x0002, mask: 0 } });
       r.track(door);
       latches.push(staticRect(ctx, s.x + w / 2 - 8, s.y + 16, 30, 16, 'accent'));
       for (let k = 0; k < 10; k++) {
         const x = s.x - w / 2 + 38 + (k % 5) * 66 + rng.range(-3, 3);
-        const y = s.y - 32 - Math.floor(k / 5) * 50;
+        const y = s.y - 36 - Math.floor(k / 5) * 52;
         const view = { role: 'hero' as const, hue: (i * 0.33 + k * 0.03) % 1 };
-        if (k % 3 === 0) circle(ctx, x, y, 22, view, { friction: 0.3, restitution: 0.15 });
+        if (k % 3 === 0) ball(ctx, x, y, 22, view, { friction: 0.3, restitution: 0.15 });
         else if (k % 3 === 1) rect(ctx, x, y, 40, 40, view, { friction: 0.4, restitution: 0.1 });
         else polygon(ctx, x, y + 4, 3, 26, view, { friction: 0.4, restitution: 0.1 });
       }
@@ -342,35 +187,228 @@ const trapdoors: SceneDef = {
   },
 };
 
-/** Cascade Bounce — balls ricochet down a zigzag of tilted plates into a bowl. */
-const cascade: SceneDef = {
-  id: 'cascade-bounce',
+/** Tumbling Room — a motor turns the room a quarter at a time; its furniture slides and tumbles. */
+const tumblingRoom: SceneDef = {
+  id: 'tumbling-room',
   theme: 'gravity',
-  title: { zh: '台阶弹球', en: 'Cascade Bounce' },
-  law: { zh: '反射与能量损失', en: 'Reflection and energy loss' },
-  blurb: { zh: '几颗球从高处落下，在之字排列的斜板之间来回弹跳，每撞一次都点亮一块板。', en: 'Balls ricochet down a zigzag of tilted plates, lighting each one they strike.' },
-  duration: 11,
+  title: { zh: '翻转房间', en: 'Tumbling Room' },
+  law: { zh: '转动的房间与不变的重力', en: 'A turning room, gravity unchanged' },
+  blurb: { zh: '电机把整个房间每次翻转九十度，镜头跟着房间一起转；房里的"家具"一次次滑落、翻滚、重新堆叠。', en: 'A motor turns the whole room a quarter at a time and the camera turns with it; its furniture slides, tumbles and restacks.' },
+  duration: 12,
   energy: 3,
   endState: 'settle',
+  presettle: 1,
   setup(ctx) {
-    const { tl } = ctx;
-    const plates: [number, number, number][] = [
-      [760, 300, 0.32], [1150, 420, -0.32], [760, 560, 0.32], [1150, 690, -0.32], [800, 830, 0.25],
-    ];
-    for (const [x, y, a] of plates) staticRect(ctx, x, y, 300, 18, 'structure', a, { restitution: 0.8 });
-    staticCircle(ctx, 960, 470, 16, 'accent', { restitution: 0.9 });
-    staticCircle(ctx, 960, 740, 16, 'accent', { restitution: 0.9 });
-    const bowl = [...wallPath(ctx, arcPts(1200, 760, 260, Math.PI * 0.15, Math.PI * 0.85, 12), 16), ground(ctx, 1060, 4000)];
-    const balls: MBody[] = [];
-    for (let i = 0; i < 4; i++) balls.push(circle(ctx, 700 + i * 24, 120 - i * 10, 16, { role: 'hero', hue: i / 3, trail: 2.5, weight: 1 }, { isStatic: true, restitution: 0.75, friction: 0.05, frictionAir: 0 }));
-    dolly(ctx, 960, 540, 0.98, 1.03);
+    const { camera, tl } = ctx;
+    const C = { x: W / 2, y: 540 };
+    const s = 640;
+    const h = s / 2 + 12;
+    const room = wallBody(ctx, [{ x: C.x - h, y: C.y - h }, { x: C.x + h, y: C.y - h }, { x: C.x + h, y: C.y + h }, { x: C.x - h, y: C.y + h }], 24, 'structure', { friction: 0.6 }, true);
+    const pieces: [number, number, number][] = [[150, 60, 0.05], [90, 90, 0.25], [60, 140, 0.45], [120, 40, 0.6], [70, 70, 0.8], [40, 40, 0.95], [100, 30, 0.35]];
+    let x = C.x - s / 2 + 40;
+    for (const [w, hh, hue] of pieces) {
+      rect(ctx, x + w / 2, C.y + s / 2 - hh / 2 - 2, w, hh, { role: 'hero', hue, weight: 1 }, { friction: 0.5, restitution: 0.15, density: 0.002 });
+      x += w + 8;
+      if (x > C.x + s / 2 - 120) x = C.x - s / 2 + 60;
+    }
+    ball(ctx, C.x + 120, C.y + s / 2 - 120, 34, { role: 'accent', weight: 1 }, { friction: 0.05, restitution: 0.3 });
+    camera.set(C.x, C.y, 1.0);
+    camera.stiffness = 0.5;
+    let target = 0;
+    let turned = 0;
+    const turnAt = (at: number, from: number) => tl.during(at, at + 1.3, (p) => (target = from + (Math.PI / 2) * easeInOutSine(p)));
     return {
-      entry: { x: 760, y: 220 },
-      floors: bowl,
-      enter: () => balls.forEach((b, i) => tl.at(tl.t + i * 0.9, () => release(b))),
+      entry: { x: C.x, y: C.y },
+      enter: () => {
+        const t0 = tl.t;
+        turnAt(t0 + 0.2, 0);
+        turnAt(t0 + 2.6, Math.PI / 2);
+        turnAt(t0 + 5.0, Math.PI);
+      },
+      step: () => {
+        // The motor follows the programmed angle; the camera turns with the room.
+        const da = target - turned;
+        if (da !== 0) turn(room, da, C);
+        else halt(room);
+        turned = target;
+        camera.angle = camera.targetAngle = -turned;
+      },
     };
   },
 };
 
-export const GRAVITY: SceneDef[] = [choir, brachistochrone, frictionGlide, projectileFan, tumblingRoom, trapdoors, cascade];
+/**
+ * Marble Race — eight marbles let go together down a long run of ramps, past a spinner, over
+ * bumps and through a field of pegs; the camera keeps with the leader to the finish.
+ */
+const marbleRace: SceneDef = {
+  id: 'marble-race',
+  theme: 'gravity',
+  title: { zh: '弹珠竞速', en: 'Marble Race' },
+  law: { zh: '滚动、碰撞与运气', en: 'Rolling, collisions and luck' },
+  blurb: { zh: '八颗弹珠同时出发，冲下一段段折返的长坡，穿过风车、颠过小坡、落进钉阵，镜头一路跟着领头的那颗，直到终点排出名次。', en: 'Eight marbles start together down a run of switchback ramps, past a spinner, over bumps and through pegs; the camera follows the leader to the finish.' },
+  duration: 15,
+  energy: 4,
+  endState: 'settle',
+  presettle: 1.6,
+  canDrop: true,
+  setup(ctx) {
+    const { r, world, engine, camera, tl } = ctx;
+    engine.gravity.scale = 0.003;
+    const rail = { friction: 0.6, frictionStatic: 0.15, restitution: 0.1 };
+    const T = 16;
+    // Start shelf and gate.
+    wallPath(ctx, [{ x: 120, y: 100 }, { x: 120, y: 160 }, { x: 540, y: 226 }], T, 'structure', rail);
+    const gate = staticRect(ctx, 548, 176, 14, 90, 'accent');
+    // A: long run to the right, ending in a curved bumper.
+    wallPath(ctx, [{ x: 530, y: 236 }, { x: 1560, y: 512 }], T, 'structure', rail);
+    wallPath(ctx, arcPts(1560, 512, 150, -Math.PI * 0.42, Math.PI * 0.18, 8), T, 'structure', { friction: 0.2, restitution: 0.2 });
+    // B: back to the left, with a free spinner on the way.
+    wallPath(ctx, [{ x: 1690, y: 660 }, { x: 340, y: 1020 }], T, 'structure', rail);
+    wallPath(ctx, arcPts(340, 1020, 150, Math.PI * 0.82, Math.PI * 1.42, 8), T, 'structure', { friction: 0.2, restitution: 0.2 });
+    const hub = { x: 1060, y: 734 };
+    const spinner = compound(ctx, [Bodies.rectangle(hub.x, hub.y, 150, 12), Bodies.rectangle(hub.x, hub.y, 12, 150), Bodies.circle(hub.x, hub.y, 14)], { role: 'accent', weight: 1, impacts: false }, { density: 0.0016, frictionAir: 0.01, friction: 0.1 });
+    Composite.add(world, Constraint.create({ pointA: hub, bodyB: spinner, length: 0, stiffness: 1 }));
+    // C: to the right again, over three bumps.
+    wallPath(ctx, [{ x: 190, y: 1160 }, { x: 1560, y: 1530 }], T, 'structure', rail);
+    // Three little kicks: each lifts the marbles off the rail for a moment.
+    for (const bx of [620, 940, 1260]) staticCircle(ctx, bx, 1160 + ((bx - 190) / 1370) * 370 + 5, 16, 'accent', { friction: 0.3 });
+    // D: off the end into a field of pegs, funnelled to the final straight.
+    const pegs: Pt[] = [];
+    for (let row = 0; row < 6; row++)
+      for (let k = 0; k < 6 - (row % 2); k++) pegs.push({ x: 1360 + k * 82 + (row % 2) * 41, y: 1660 + row * 62 });
+    for (const p of pegs) staticCircle(ctx, p.x, p.y, 9, 'structure', { restitution: 0.3 });
+    wallPath(ctx, [{ x: 1290, y: 1580 }, { x: 1300, y: 2040 }, { x: 1520, y: 2160 }], T, 'structure', { friction: 0.1 });
+    wallPath(ctx, [{ x: 1840, y: 1580 }, { x: 1830, y: 2040 }, { x: 1600, y: 2160 }], T, 'structure', { friction: 0.1 });
+    // E: the final straight to the left, ending in a trough where they queue in finishing order.
+    const fin = wallPath(ctx, [{ x: 1692, y: 2150 }, { x: 1680, y: 2200 }, { x: 640, y: 2400 }, { x: 330, y: 2390 }, { x: 300, y: 2310 }], T, 'structure', rail);
+    const finishX = 760;
+    r.drawBack((g) => {
+      const c = ctx.style.accentColor;
+      for (let k = 0; k < 8; k++) g.rect(finishX - 6, 2200 + k * 22, 12, 11).fill({ color: c, alpha: k % 2 ? 0.25 : 0.85 });
+    });
+    const marbles: MBody[] = [];
+    for (let i = 0; i < 8; i++) {
+      // A little apart, so the row never locks up: touching balls that roll the same way rub against each other.
+      const x = 512 - i * 37;
+      marbles.push(ball(ctx, x, 160 + ((x - 120) / 420) * 66 - 24, 15, { role: 'hero', hue: i / 7, trail: 1.6, weight: 1 }, { friction: 0.14, frictionStatic: 0.1, restitution: 0.45, density: 0.003, frictionAir: 0.0008 }));
+    }
+    const finished: MBody[] = [];
+    r.drawFront((g) => {
+      finished.forEach((b, k) => {
+        const p = r.ipos(b);
+        if (k < 3) g.circle(p.x, p.y, 15 + 10 - k * 3).stroke({ width: 3 - k * 0.6, color: ctx.style.accentColor, alpha: 0.9 });
+      });
+    });
+    camera.set(700, 420, 0.92);
+    camera.stiffness = 1.4;
+    let racing = false;
+    camera.follow = () => {
+      if (!racing) return null;
+      const sorted = marbles.filter((b) => !finished.includes(b)).sort((a, b) => b.position.y - a.position.y);
+      const lead = sorted[0] ?? finished[finished.length - 1];
+      const second = sorted[1] ?? lead;
+      return { x: Math.max(760, Math.min(1160, (lead.position.x * 2 + second.position.x) / 3)), y: Math.max(420, Math.min(2000, (lead.position.y * 2 + second.position.y) / 3 - 60)) };
+    };
+    return {
+      entry: { x: 548, y: 200 },
+      floors: fin,
+      enter: () => {
+        open(ctx, gate);
+        tl.at(tl.t + 0.4, () => (racing = true));
+      },
+      step: () => {
+        for (const b of marbles) {
+          if (finished.includes(b) || b.position.y < 2180 || b.position.x > finishX) continue;
+          finished.push(b);
+          r.fx.ring({ x: b.position.x, y: b.position.y, r1: finished.length === 1 ? 140 : 70, width: 3, color: r.color('hero', marbles.indexOf(b) / 7), life: 0.6 });
+        }
+      },
+    };
+  },
+};
+
+/**
+ * Rolling Race — a hoop, a disc, a ball and a frictionless block start together down identical
+ * slopes. The block, with nothing to spin, wins; the hoop, with all its mass at the rim, comes last.
+ */
+const rollingRace: SceneDef = {
+  id: 'rolling-race',
+  theme: 'gravity',
+  title: { zh: '滚动竞速', en: 'Rolling Race' },
+  law: { zh: '转动惯量分走了动能', en: 'Spinning takes its share of the energy' },
+  blurb: { zh: '圆环、圆盘、实心球和一块无摩擦滑块从同一高度沿同样的斜坡出发：不用转的滑块最快，质量全在边上的圆环最慢。', en: 'A hoop, a disc, a ball and a frictionless block race down identical slopes: the block, which need not spin, wins; the hoop comes last.' },
+  duration: 11,
+  energy: 2,
+  endState: 'settle',
+  canDrop: true,
+  setup(ctx) {
+    const { r, engine } = ctx;
+    engine.gravity.scale = 0.0018;
+    const lanes = 4;
+    const x0 = 200;
+    const x1 = 1720;
+    const drop = 190;
+    const R = 34;
+    const floors: MBody[] = [];
+    const runners: MBody[] = [];
+    const held: MBody[] = [];
+    for (let k = 0; k < lanes; k++) {
+      const y0 = 170 + k * 215;
+      floors.push(staticRect(ctx, (x0 + x1) / 2, y0 + drop / 2 + 8, Math.hypot(x1 - x0, drop) + 20, 16, 'structure', Math.atan2(drop, x1 - x0), { friction: 0.9 }));
+      staticRect(ctx, x1 + 30, y0 + drop - 40, 16, 110, 'structure');
+      const sx = x0 + 80;
+      const sy = y0 + ((sx - x0) / (x1 - x0)) * drop - R - 1;
+      let b: MBody;
+      if (k === 0) {
+        b = rect(ctx, sx, sy + R - 26, 64, 52, { role: 'hero', hue: 0.05, weight: 1, trail: 1.2 }, { friction: 0, frictionStatic: 0, density: 0.002, isStatic: true });
+      } else if (k === 1) {
+        // A solid sphere: I = 2/5·m·r² once it is let go (a disc in the plane would have 1/2).
+        b = ball(ctx, sx, sy, R, { role: 'hero', hue: 0.35, weight: 1, trail: 1.2 }, { friction: 0.9, density: 0.002, isStatic: true });
+      } else if (k === 2) {
+        b = ball(ctx, sx, sy, R, { role: 'hero', hue: 0.65, weight: 1, trail: 1.2 }, { friction: 0.9, density: 0.002, isStatic: true });
+      } else {
+        // A real hoop: its mass all at the rim, so I ≈ m·r² comes out of the geometry itself.
+        const parts: MBody[] = [];
+        const n = 28;
+        for (let i = 0; i < n; i++) {
+          const a = (i / n) * Math.PI * 2;
+          parts.push(Bodies.rectangle(sx + Math.cos(a) * (R - 4), sy + Math.sin(a) * (R - 4), 2 * R * Math.sin(Math.PI / n) + 2, 8, { angle: a + Math.PI / 2 }));
+        }
+        b = compound(ctx, parts, { role: 'hero', hue: 0.95, weight: 1, trail: 1.2 }, { friction: 0.9, density: 0.004 });
+        Body.setStatic(b, true);
+      }
+      runners.push(b);
+      held.push(b);
+    }
+    const sphere = runners[1];
+    const finish = x1 - 140;
+    const order: number[] = [];
+    r.drawBack((g) => {
+      for (let k = 0; k < 9; k++) g.rect(finish - 5, 150 + k * 100, 10, 50).fill({ color: ctx.style.accentColor, alpha: 0.6 });
+    });
+    r.drawFront((g) => {
+      order.forEach((k, rank) => {
+        const y0 = 170 + k * 215;
+        g.circle(x1 + 90, y0 + drop - 70, 16 - rank * 3).fill({ color: r.color('hero', [0.05, 0.35, 0.65, 0.95][k]), alpha: 0.95 });
+      });
+    });
+    dolly(ctx, W / 2, 520, 0.98, 1.02);
+    return {
+      entry: { x: x0 + 80, y: 400 },
+      floors,
+      enter: () => {
+        release(...held);
+        Body.setInertia(sphere, 0.4 * sphere.mass * R * R);
+      },
+      step: () => {
+        runners.forEach((b, k) => {
+          if (!order.includes(k) && b.position.x >= finish) order.push(k);
+        });
+      },
+    };
+  },
+};
+
+export const GRAVITY: SceneDef[] = [brachistochrone, projectileFan, tumblingRoom, trapdoors, marbleRace, rollingRace];
 export type { Pt };

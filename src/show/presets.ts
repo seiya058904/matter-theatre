@@ -25,17 +25,16 @@ const show = (style: string, bg: 0 | 1, link: LinkMode, ids: string[], seed = 7)
  * a peak, a breath, and a different family at every step.
  */
 export const CURATED = [
-  'pendulum-wave', 'falling-choir', 'newton-cradle', 'galton', 'domino-growth', 'kepler',
-  'soft-bloom', 'brachistochrone', 'ferris-wheel', 'stack-drop', 'kaleidoscope', 'cam-wave',
-  'double-pendulum', 'hourglass', 'mangonel', 'coulomb',
+  'ring-escape', 'pendulum-wave', 'marble-race', 'archimedes', 'three-body', 'trebuchet', 'water-balloon', 'galton',
+  'domino-growth', 'harmonograph', 'ball-pit', 'newton-cradle', 'bed-of-nails', 'kaleidoscope', 'wrecking-ball', 'cargo-boat',
 ];
 
 export const PRESETS: Preset[] = [
   { id: 'house', name: { zh: '馆藏精选', en: 'House Selection' }, note: { zh: '霓虹 · 十六段精选，自动衔接', en: 'Neon · sixteen favourites, auto segues' }, cfg: show('neon', 0, 'auto', CURATED) },
-  { id: 'paper-toys', name: { zh: '纸上玩具', en: 'Paper Toys' }, note: { zh: '纸艺 · 机关、软体与手作感', en: 'Paper · machines, jelly and craft' }, cfg: show('paper', 1, 'auto', ['size-sieve', 'jelly-steps', 'balance-scale', 'domino-stairs', 'water-wheel', 'roly-poly', 'shishi-odoshi', 'sand-strata', 'calder-mobile', 'rube-relay'], 11) },
-  { id: 'ink-scroll', name: { zh: '水墨长卷', en: 'Ink Scroll' }, note: { zh: '水墨 · 留白、摆动与墨痕', en: 'Ink · emptiness, swing and trace' }, cfg: show('ink', 1, 'auto', ['pendulum-wave', 'rope-drape', 'hourglass', 'coupled-pendulums', 'cairn', 'bead-curtain', 'double-pendulum', 'avalanche', 'spring-organ', 'curling'], 5) },
-  { id: 'glass-cosmos', name: { zh: '琉璃宇宙', en: 'Glass Cosmos' }, note: { zh: '琉璃 · 轨道、电荷与光', en: 'Glass · orbits, charges and light' }, cfg: show('glass', 0, 'auto', ['binary-star', 'kaleidoscope', 'spring-lissajous', 'coulomb-bowl', 'kepler', 'stadium-billiards', 'soft-collision', 'accretion', 'gas-expansion', 'coulomb'], 17) },
-  { id: 'cartoon-fair', name: { zh: '卡通游乐园', en: 'Cartoon Fair' }, note: { zh: '卡通 · 弹跳、抛掷与机关', en: 'Cartoon · bounces, throws and gadgets' }, cfg: show('cartoon', 0, 'auto', ['bounce-ladder', 'seesaw-toss', 'ferris-wheel', 'projectile-fan', 'bouncing-ring', 'slingshot', 'pendulum-relay', 'recoil-carts', 'tumbling-room', 'pyramid-demolition'], 23) },
+  { id: 'paper-toys', name: { zh: '纸上玩具', en: 'Paper Toys' }, note: { zh: '纸艺 · 弹珠、机关、小船与果冻', en: 'Paper · marbles, gadgets, boats and jelly' }, cfg: show('paper', 1, 'auto', ['marble-race', 'jelly-steps', 'bounce-sorter', 'domino-stairs', 'archimedes', 'roly-poly', 'shishi-odoshi', 'rope-cut', 'calder-mobile', 'cargo-boat', 'size-sieve', 'rube-relay'], 11) },
+  { id: 'ink-scroll', name: { zh: '水墨长卷', en: 'Ink Scroll' }, note: { zh: '水墨 · 摆动、流沙与笔迹', en: 'Ink · swing, sand and brushwork' }, cfg: show('ink', 1, 'auto', ['pendulum-wave', 'harmonograph', 'hourglass', 'bead-curtain', 'double-pendulum', 'archimedes', 'avalanche', 'spring-organ', 'standing-wave', 'brachistochrone'], 5) },
+  { id: 'glass-cosmos', name: { zh: '琉璃宇宙', en: 'Glass Cosmos' }, note: { zh: '琉璃 · 轨道、电荷与光', en: 'Glass · orbits, charges and light' }, cfg: show('glass', 0, 'auto', ['three-body', 'binary-star', 'kaleidoscope', 'coulomb-bowl', 'kepler', 'water-balloon', 'stadium-billiards', 'soft-collision', 'accretion', 'gas-expansion', 'coulomb', 'ring-escape'], 17) },
+  { id: 'cartoon-fair', name: { zh: '卡通游乐园', en: 'Cartoon Fair' }, note: { zh: '卡通 · 弹跳、抛掷与机关', en: 'Cartoon · bounces, throws and gadgets' }, cfg: show('cartoon', 0, 'auto', ['ring-escape', 'bed-of-nails', 'seesaw-toss', 'ferris-wheel', 'projectile-fan', 'bouncing-ring', 'slingshot', 'ball-pit', 'pendulum-relay', 'rolling-race', 'tumbling-room', 'pyramid-demolition', 'trebuchet'], 23) },
 ];
 
 export const DEFAULT_SHOW = PRESETS[0].cfg;

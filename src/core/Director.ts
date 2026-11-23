@@ -41,7 +41,10 @@ interface Running {
   slow: { from: number; to: number; t0: number; ease: number; hold: number } | null;
   /** Off-screen settling steps still to run before the run is shown. */
   settle: number;
-  dropped: boolean;
+  /** Physical laws registered by the template (springs, fields, buoyancy, gas pressure). */
+  forces: (() => void)[];
+  /** Floor drop in progress: the floors fall away faster than anything standing on them. */
+  drop: { v: number; t: number } | null;
 }
 
 /** At most this many physics steps per rendered frame; beyond it time is dropped, never piled up. */
@@ -49,7 +52,7 @@ const MAX_STEPS = 4;
 /** The next template is built this long before its segue starts (spreads cost away from the cut). */
 const PREBUILD = 2.2;
 /** Off-screen settling steps per frame. */
-const SETTLE_PER_FRAME = 5;
+const SETTLE_PER_FRAME = 8;
 
 /**
  * Plays a running order of templates: builds each one early, settles it off-screen,
@@ -148,7 +151,7 @@ export class Director {
     const engine = Matter.Engine.create({ gravity: { x: def.gravity?.x ?? 0, y: def.gravity?.y ?? 1, scale: 0.001 } });
     engine.positionIterations = 8;
     engine.velocityIterations = 6;
-    engine.constraintIterations = 3;
+    engine.constraintIterations = 4;
     const camera = new Camera();
     const r = new SceneRenderer(this.style, engine);
     r.defer = true;
@@ -160,7 +163,7 @@ export class Director {
     root.addChild(camC);
     root.visible = false;
     parent.addChild(root);
-    const run: Running = { item, index, start, inst: null as unknown as SceneInstance, engine, r, camera, tl, root, camC, entered: false, enterAt, slow: null, local: 0, settle: Math.round((def.presettle ?? 0) * 120), dropped: false };
+    const run: Running = { item, index, start, inst: null as unknown as SceneInstance, engine, r, camera, tl, root, camC, entered: false, enterAt, slow: null, local: 0, settle: Math.round((def.presettle ?? 0) * 120), forces: [], drop: null };
     const ctx: SceneContext = {
       engine,
       world: engine.world,
@@ -176,6 +179,9 @@ export class Director {
       slowmo: (to, hold, ease = 0.35) => {
         run.slow = { from: engine.timing.timeScale, to, t0: run.local, ease, hold };
       },
+      force: (fn) => {
+        run.forces.push(fn);
+      },
     };
     run.inst = def.setup(ctx);
     return run;
@@ -185,6 +191,7 @@ export class Director {
   private settleSteps(run: Running, n: number): void {
     for (let i = 0; i < n && run.settle > 0; i++, run.settle--) {
       run.r.snapshot();
+      for (const f of run.forces) f();
       Matter.Engine.update(run.engine, STEP * 1000);
     }
   }
@@ -233,6 +240,8 @@ export class Director {
     }
     run.tl.advance(local);
     run.inst.step?.(local, dt);
+    if (run.drop) this.dropFloors(run, dt);
+    for (const f of run.forces) f();
     Matter.Engine.update(run.engine, dt * 1000);
     if (this.headless) run.camera.update(dt);
   }
@@ -299,16 +308,27 @@ export class Director {
     }
   }
 
-  /** "Floor drop": the outgoing template's floors open and everything falls away under gravity. */
+  /**
+   * "Floor drop": the outgoing template's floors fall away, accelerating faster than gravity,
+   * so everything that stood on them is simply left in free fall.
+   */
   private openFloors(run: Running | undefined): void {
-    if (!run || run.dropped) return;
-    run.dropped = true;
-    for (const b of run.inst.floors ?? []) {
-      Matter.Composite.remove(run.engine.world, b, true);
-      const v = run.r.views.get(b);
-      if (v) v.alpha = 0;
-    }
+    if (!run || run.drop || !run.inst.floors?.length) return;
+    run.drop = { v: 0, t: 0 };
     for (const b of Matter.Composite.allBodies(run.engine.world)) Matter.Sleeping.set(b, false);
+  }
+
+  private dropFloors(run: Running, dt: number): void {
+    const d = run.drop!;
+    d.t += dt;
+    // 4 g: the floor outruns anything resting on it, which therefore falls freely.
+    d.v += 4000 * dt;
+    const setPos = Matter.Body.setPosition as unknown as (b: Matter.Body, p: Matter.Vector, updateVelocity: boolean) => void;
+    for (const b of run.inst.floors ?? []) {
+      setPos(b, { x: b.position.x, y: b.position.y + d.v * dt }, true);
+      const v = run.r.views.get(b);
+      if (v) v.alpha = Math.max(0, 1 - d.t / 0.7);
+    }
   }
 
   /** Simulates forward (without rendering) to local time `t` of the current item. */
@@ -320,6 +340,7 @@ export class Director {
     let guard = 0;
     while (this.time < target && !this.ended && guard++ < 120 * 120) this.tick();
     this.headless = false;
+    for (const r of this.running) r.r.resetTrails();
   }
 
   // ---------------- thumbnails & QA ----------------
@@ -343,11 +364,35 @@ export class Director {
     bg.width = W;
     bg.height = H;
     holder.addChildAt(bg, 0);
-    run.settle = Math.min(run.settle, 90);
+    run.settle = Math.min(run.settle, 360);
     this.finishSettle(run);
     this.headless = true;
     for (let t = 0; t < 0.2; t += STEP) this.stepRun(run, t, STEP);
     this.headless = false;
+    this.applyCamera(run);
+    run.r.render(1, 1 / 60);
+    run.inst.afterRender?.();
+    if (this.stage.finish) holder.filters = [this.stage.finish];
+    const canvas = this.stage.app.renderer.extract.canvas({ target: holder, frame: new Rectangle(0, 0, W, H), resolution: width / W }) as HTMLCanvasElement;
+    const url = canvas.toDataURL('image/jpeg', 0.85);
+    holder.filters = null;
+    this.disposeRun(run);
+    holder.destroy({ children: true });
+    return url;
+  }
+
+  /** A still of the template at local time t (QA contact sheets): simulated headless, rendered once. */
+  snapshot(def: SceneDef, t: number, width = 320): string {
+    const { run, holder } = this.offscreen(def, 0.6);
+    const bg = new Sprite(this.stage.bg.sprite.texture);
+    bg.width = W;
+    bg.height = H;
+    holder.addChildAt(bg, 0);
+    this.finishSettle(run);
+    this.headless = true;
+    for (let k = 0; k * STEP < t; k++) this.stepRun(run, k * STEP, STEP);
+    this.headless = false;
+    run.r.resetTrails();
     this.applyCamera(run);
     run.r.render(1, 1 / 60);
     run.inst.afterRender?.();
@@ -388,6 +433,8 @@ export class Director {
     }
     this.headless = false;
     let moved = 0;
+    let endSpeed = 0;
+    for (const b of bodies()) if (!b.isStatic) endSpeed = Math.max(endSpeed, b.speed);
     for (const b of bodies()) {
       if (!Number.isFinite(b.position.x) || !Number.isFinite(b.position.y)) nan = true;
       if (Math.abs(b.position.x - W / 2) > 6000 || Math.abs(b.position.y - H / 2) > 6000) escaped++;
@@ -412,6 +459,8 @@ export class Director {
       nan,
       escaped,
       moved: Math.round(moved),
+      endSpeed: +endSpeed.toFixed(2),
+      startSpeed: +maxStartSpeed.toFixed(2),
       calmStart: def.movingStart ? true : maxStartSpeed < 0.6,
     };
   }
@@ -482,9 +531,22 @@ export class Director {
     this.renderSegue(alpha);
     const primary = this.running[this.running.length - 1];
     if (primary) {
-      const c = primary.camera;
-      const slide = (primary.root.x - W / 2) / W;
-      this.stage.bg.update(this.stage.app.renderer, this.visualTime, (c.x - W / 2) / H + slide * 0.5, (c.y - H / 2) / H, c.zoom);
+      // The backdrop's parallax follows the camera, blended across a segue so it never jumps;
+      // tall templates (a camera far below the frame) are eased so the sky does not run away.
+      const cam = (r: Running) => {
+        const c = r.camera;
+        const slide = (r.root.x - W / 2) / W;
+        const dy = (c.y - H / 2) / H;
+        return { x: (c.x - W / 2) / H + slide * 0.5, y: dy / (1 + Math.abs(dy) * 0.8), z: c.zoom };
+      };
+      let b = cam(primary);
+      const prev = this.running[this.running.length - 2];
+      if (prev) {
+        const a = cam(prev);
+        const e = easeInOutSine(clamp((this.time + alpha * STEP - primary.start) / OVERLAP));
+        b = { x: a.x + (b.x - a.x) * e, y: a.y + (b.y - a.y) * e, z: a.z + (b.z - a.z) * e };
+      }
+      this.stage.bg.update(this.stage.app.renderer, this.visualTime, b.x, b.y, b.z);
     }
     if (this.stage.finish) this.stage.finish.time = this.visualTime;
   }
@@ -502,7 +564,7 @@ export class Director {
     switch (kind) {
       case 'glide': {
         // One long take: both stages sit side by side and the view travels between them.
-        const s = 1 - 0.07 * breath;
+        const s = 1 - 0.045 * breath;
         A.root.position.set(W / 2 - W * e * s, H / 2);
         B.root.position.set(W / 2 + W * (1 - e) * s, H / 2);
         A.root.scale.set(s);
@@ -510,9 +572,9 @@ export class Director {
         break;
       }
       case 'dissolve': {
-        // Crossfade with a shared drift so motion never stops.
-        A.root.alpha = 1 - e;
-        B.root.alpha = e;
+        // A staggered crossfade (less double exposure on opaque looks) with a shared drift.
+        A.root.alpha = 1 - smooth(clamp(p / 0.72));
+        B.root.alpha = smooth(clamp((p - 0.28) / 0.72));
         A.root.position.x = W / 2 - 70 * e;
         B.root.position.x = W / 2 + 70 * (1 - e);
         A.root.scale.set(1 + 0.02 * e);

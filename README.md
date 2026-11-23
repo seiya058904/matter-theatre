@@ -15,7 +15,7 @@
 <p align="center">
   A composable physics show built on <a href="https://brm.io/matter-js/">Matter.js</a> and <a href="https://pixijs.com/">PixiJS</a>.<br>
   Open the page and a hand-picked running order of short physics pieces plays in a seamless loop —<br>
-  or open <strong>Compose</strong> to direct your own show from 60 templates, five looks, and seven segues, then export it as video.
+  or open <strong>Compose</strong> to direct your own show from 63 templates, five looks, and seven segues, then export it as video.
 </p>
 
 <p align="center">
@@ -33,7 +33,7 @@
   &nbsp;·&nbsp;
   <a href="#how-it-works">⚙️ Principles &amp; Segues</a>
   &nbsp;·&nbsp;
-  <a href="#templates">🎬 60 Templates</a>
+  <a href="#templates">🎬 63 Templates</a>
   &nbsp;·&nbsp;
   <a href="#controls">⌨️ Controls</a>
   &nbsp;·&nbsp;
@@ -41,19 +41,19 @@
 </p>
 
 <p align="center">
-  <sub>60 TEMPLATES &nbsp;·&nbsp; 11 FAMILIES &nbsp;·&nbsp; 5 COMPLETE LOOKS &nbsp;·&nbsp; 7 SEGUES &nbsp;·&nbsp; 120 HZ FIXED PHYSICS &nbsp;·&nbsp; MP4 / WEBM EXPORT</sub>
+  <sub>63 TEMPLATES &nbsp;·&nbsp; 12 FAMILIES &nbsp;·&nbsp; 5 COMPLETE LOOKS &nbsp;·&nbsp; 7 SEGUES &nbsp;·&nbsp; 120 HZ FIXED PHYSICS &nbsp;·&nbsp; MP4 / WEBM EXPORT</sub>
 </p>
 
 ---
 
 > **No title card. No ending. No text inside the picture.**
 >
-> Gravity, contacts, friction, restitution, constraints, Hookean springs, inverse-square and Coulomb fields drive every single frame. A template may only arrange initial conditions and *let go* — release a ball, open a gate, cut a string, start a visible motor, or tilt a container. Nothing is nudged, clamped, or teleported afterwards.
+> Gravity, contacts, friction, restitution, constraints, real force laws (Hooke, ideal gas, Archimedes, Newton, Coulomb) drive every single frame. A template may only arrange initial conditions and *let go* — release a ball, open a gate, cut a string, start a visible motor, or tilt a container. Nothing is nudged, clamped, or teleported afterwards.
 
 <a id="five-looks"></a>
 ## 🎨 Five Complete Looks
 
-**Templates never pick colours.** Each body declares only a *role* (`hero`, `accent`, `structure`, `ground`) and a position along the look's palette ramp — so every one of the 60 physics templates renders natively in all five visual worlds, complete with custom materials, impacts, particles, trails, two procedural backdrops, and a finishing grade.
+**Templates never pick colours.** Each body declares only a *role* (`hero`, `accent`, `structure`, `ground`) and a position along the look's palette ramp — so every one of the 63 physics templates renders natively in all five visual worlds, complete with custom materials, impacts, particles, trails, two procedural backdrops, and a finishing grade.
 
 <table>
   <tr>
@@ -104,7 +104,7 @@
         <img src="public/thumbs/neon/galton.jpg" width="100%" alt="Galton Cascade — granular beads cascading through pegs into a bell curve" />
       </a>
       <h4>✨ Any Template × Any Look</h4>
-      <p><sub>300 PRE-RENDERED LIBRARY THUMBNAILS</sub></p>
+      <p><sub>315 PRE-RENDERED LIBRARY THUMBNAILS</sub></p>
       <p>Every combination works deterministically — click any card above to jump straight into that scene live.</p>
     </td>
   </tr>
@@ -143,26 +143,28 @@
 </table>
 
 <a id="templates"></a>
-## 🎬 60 Templates in 11 Families
+## 🎬 63 Templates in 12 Families
 
 | Family | Count | Templates |
 | :--- | :---: | :--- |
-| **Collision** | 7 | Newton's Cradle · Stacked Drop · Break Shot · Bounce Ladder · Recoil Carts · Gas Expansion · Curling |
-| **Gravity** | 7 | Falling Choir · Brachistochrone · Friction Glide · Projectile Fan · Tumbling Room · Trapdoor Shelves · Cascade Bounce |
-| **Granular** | 7 | Galton Cascade · Hourglass · Avalanche · Water Wheel · Rotating Drum · Size Sieve · Sand Strata |
-| **Balance** | 6 | Balance Scale · Roly-poly · Pyramid Demolition · Log Pile · Calder Mobile · Cairn |
-| **Oscillation** | 6 | Pendulum Wave · Double Pendulum · Spring Lissajous · Coupled Pendulums · Wrecking Ball · Spring Organ |
-| **Machines** | 6 | Ferris Wheel · Shishi-odoshi · Mangonel · Overbalanced Wheel · Cam Wave · Slingshot |
+| **Collision** | 6 | Newton's Cradle · Stacked Drop · Break Shot · Bounce Ladder · Gas Expansion · Bounce Sorter |
+| **Gravity** | 6 | Brachistochrone · Projectile Fan · Tumbling Room · Trapdoor Shelves · Marble Race · Rolling Race |
+| **Granular** | 8 | Galton Cascade · Hourglass · Avalanche · Marble Water-Wheel · Rotating Drum · Size Sieve · Sand Strata · Ball Pit |
+| **Balance** | 4 | Balance Scale · Roly-Poly · Pyramid Demolition · Calder Mobile |
+| **Oscillation** | 6 | Pendulum Wave · Double Pendulum · Harmonograph · Wrecking Ball · Spring Organ · Standing Waves |
+| **Machines** | 6 | Ferris Wheel · Shishi-odoshi · Trebuchet · Overbalanced Wheel · Cam Wave · Slingshot |
 | **Chain reactions** | 5 | Growing Dominoes · Domino Stairs · Seesaw Toss · Pendulum Relay · Rube Relay |
-| **Fields** | 5 | Kepler's Orrery · Binary Star · Coulomb Crystal · Ionic Clusters · Accretion |
-| **Ropes** | 4 | Rope Bridge · Chain Slide · Bead Curtain · Rope Drape |
-| **Soft bodies** | 4 | Soft Bloom · Jelly Steps · Soft Collision · Bouncing Ring |
-| **Patterns** | 3 | Kaleidoscope · Stadium Billiards · Settled Mosaic |
+| **Fields** | 6 | Kepler's Orrery · Binary Star · Coulomb Crystal · Ionic Clusters · Accretion · Three-Body Ballet |
+| **Ropes** | 4 | Rope Bridge · Chain Slide · Bead Curtain · Cut the Rope |
+| **Soft bodies** | 6 | Jelly Rain · Jelly Steps · Soft Collision · Rubber Ball · Bed of Nails · Water Balloon |
+| **Fluids** | 2 | Sink or Float · Overloaded |
+| **Patterns** | 4 | Kaleidoscope · Stadium Billiards · Settled Mosaic · Ring Escape |
 
 > [!NOTE]
-> **Two custom physics fixes inside `src/templates/kit.ts`:**
-> - Matter's soft constraints damp out most energy within ~2 seconds. Oscillators meant to keep ringing (*Spring Lissajous*, *Spring Organ*, *Coupled Pendulums*) use a true Hookean force (`spring()`) instead.
-> - Matter's compound bodies omit the parallel-axis term from their moment of inertia. `compound()` restores it, keeping levers, buckets, and water wheels physically stable.
+> **Physics corrections and laws in `src/templates/kit.ts`:**
+> - Matter multiplies every body's inertia by four; the kit restores true moments of inertia so balls roll and blocks tip at the right pace. `ball()` makes a 40-gon that really rolls, and static bodies keep their material.
+> - Forces are laws registered once (`ctx.force`) and run before every step, including off-screen settling: Hookean springs (`spring()`), gas-filled soft bodies (`softBody()`, P·A = const, tearable skin), Archimedes buoyancy (`water()`), and pairwise mutual gravitation (`gravitate()`).
+> - Containers turn, gravity does not: tumbling room, hourglass and kaleidoscope are driven by a motor (`turn()`).
 
 <a id="controls"></a>
 ## ⌨️ Controls & Local Development
@@ -218,7 +220,7 @@ src/
   ui/         Watch chrome, compose bench, export dialog, i18n
   export/     MediaRecorder wrapper
 public/
-  thumbs/<look>/<template>.jpg   300 pre-rendered library thumbnails
+  thumbs/<look>/<template>.jpg   315 pre-rendered library thumbnails
 ```
 
 ### Thumbnails
@@ -234,6 +236,6 @@ Private project. [Matter.js](https://brm.io/matter-js/) (MIT) and [PixiJS](https
 ---
 
 <p align="center">
-  <sub>SIXTY TEMPLATES. FIVE WORLDS. ONE ENGINE OF GRAVITY.</sub><br>
+  <sub>SIXTY-THREE TEMPLATES. FIVE WORLDS. ONE ENGINE OF GRAVITY.</sub><br>
   <sub>Matter Theatre · A composable physics show for the browser.</sub>
 </p>

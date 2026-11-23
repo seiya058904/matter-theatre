@@ -1,5 +1,5 @@
-import { W, type SceneDef } from '../core/types';
-import { Bodies, Body, Composite, Constraint, applySprings, circle, dolly, ground, rect, release, rope, spring, springK, type MBody, type Spring } from './kit';
+import { H, W, type SceneDef } from '../core/types';
+import { Bodies, Body, Composite, Constraint, circle, dolly, drive, ground, massOf, rect, release, rope, spring, springK, staticCircle, staticRect, tuned, type MBody, type Spring } from './kit';
 
 /** Pendulum Wave — fifteen tuned pendulums drift through snakes, braids and two clean rows. */
 const pendulumWave: SceneDef = {
@@ -86,98 +86,6 @@ const chaos: SceneDef = {
   },
 };
 
-/** Spring Lissajous — three bobs on crossed springs of different stiffness ratios draw Lissajous figures. */
-const lissajous: SceneDef = {
-  id: 'spring-lissajous',
-  theme: 'oscillation',
-  title: { zh: '弹簧谐振图', en: 'Spring Lissajous' },
-  law: { zh: '二维简谐振动', en: 'Two-dimensional harmonic motion' },
-  blurb: { zh: '三颗重锤被横竖两组刚度不同的弹簧张紧，两个方向的频率比各不相同，画出三幅缓慢变幻的利萨如图形。', en: 'Bobs held by crossed springs of different stiffness swing at two frequencies and draw slowly turning Lissajous figures.' },
-  duration: 13,
-  energy: 1,
-  endState: 'periodic',
-  gravity: { x: 0, y: 0 },
-  setup(ctx) {
-    const { r } = ctx;
-    // Frequency ratios x:y and the stiffness ratio each needs (pre-tensioned springs, 10 % transverse).
-    const set = [
-      { ratio: 2, kr: 6.5 },
-      { ratio: 1.5, kr: 2.774 },
-      { ratio: 4 / 3, kr: 2.041 },
-    ];
-    const held: MBody[] = [];
-    const springs: Spring[] = [];
-    const kicks: { b: MBody; vy: number }[] = [];
-    const D = 230;
-    set.forEach((q, i) => {
-      const cx = 420 + i * 540;
-      const cy = 540;
-      const bob = circle(ctx, cx + 130, cy, 16, { role: 'hero', hue: i / 2, trail: 14, weight: 1, impacts: false }, { isStatic: true, frictionAir: 0, density: 0.004 });
-      const m = Math.PI * 16 * 16 * 0.004;
-      const wx = (2 * Math.PI * 0.34) / 1000;
-      const k1 = (m * wx * wx) / (2 + 0.2 * q.kr);
-      const k2 = k1 * q.kr;
-      for (const [px, py, k] of [[cx - D, cy, k1], [cx + D, cy, k1], [cx, cy - D, k2], [cx, cy + D, k2]] as const)
-        springs.push(spring(ctx, null, { x: px, y: py }, bob, { x: 0, y: 0 }, D * 0.9, k, { coils: 7, amp: 6, width: 1.4 }));
-      r.drawBack((g) => g.rect(cx - D, cy - D, D * 2, D * 2).stroke({ width: 1.5, color: ctx.style.structure, alpha: 0.35 }));
-      held.push(bob);
-      // Plucked sideways as it is let go: amplitude ~110 px in y.
-      kicks.push({ b: bob, vy: ((wx * q.ratio * 1000 * 110) / 60) * (i % 2 ? -1 : 1) });
-    });
-    dolly(ctx, W / 2, 540, 1.0, 1.05);
-    return {
-      entry: { x: W / 2, y: 540 },
-      enter: () => {
-        release(...held);
-        for (const k of kicks) Body.setVelocity(k.b, { x: 0, y: k.vy });
-      },
-      step: () => applySprings(springs),
-    };
-  },
-};
-
-/** Coupled Pendulums — two pendulums joined by a weak spring trade their energy back and forth. */
-const coupled: SceneDef = {
-  id: 'coupled-pendulums',
-  theme: 'oscillation',
-  title: { zh: '耦合摆', en: 'Coupled Pendulums' },
-  law: { zh: '耦合振动与拍频', en: 'Coupled oscillation and beats' },
-  blurb: { zh: '两对摆用细弹簧相连，一只摆起，能量便在两只之间来回转移，此起彼伏。', en: 'Pendulums joined by a weak spring hand their energy back and forth, one swinging while the other rests.' },
-  duration: 14,
-  energy: 1,
-  endState: 'periodic',
-  setup(ctx) {
-    const { world, r, engine } = ctx;
-    engine.gravity.scale = 0.0022;
-    const pairs = [
-      // Coupling chosen for beat periods of about 7 s and 4.5 s.
-      { x: 620, k: 2.46e-6, hue: 0.1 },
-      { x: 1300, k: 4.15e-6, hue: 0.65 },
-    ];
-    const held: MBody[] = [];
-    const springs: Spring[] = [];
-    const len = 420;
-    const py = 200;
-    for (const p of pairs) {
-      const bobs = [-1, 1].map((s, j) => {
-        const px = p.x + s * 150;
-        const ang = j === 0 ? -0.42 : 0;
-        const b = circle(ctx, px + Math.sin(ang) * len, py + Math.cos(ang) * len, 30, { role: 'hero', hue: p.hue + j * 0.15, trail: 2.2, weight: 1, impacts: false }, { isStatic: true, frictionAir: 0, density: 0.004 });
-        const c = Constraint.create({ pointA: { x: px, y: py }, bodyB: b, length: len, stiffness: 1 });
-        Composite.add(world, c);
-        r.constraint(c, 'structure', 1.5);
-        return b;
-      });
-      const m = Math.PI * 30 * 30 * 0.004;
-      springs.push(spring(ctx, bobs[0], { x: 0, y: 0 }, bobs[1], { x: 0, y: 0 }, 300, p.k * m, { draw: 'accent', coils: 12, amp: 7, width: 1.5 }));
-      held.push(...bobs);
-      r.drawBack((g) => g.roundRect(p.x - 260, py - 14, 520, 12, 6).fill({ color: ctx.style.structure, alpha: 0.7 }));
-    }
-    dolly(ctx, W / 2, 470, 1.02, 1.06);
-    return { entry: { x: W / 2, y: 500 }, enter: () => release(...held), step: () => applySprings(springs) };
-  },
-};
-
 /** Wrecking Ball — a heavy ball on a chain swings into a settled brick wall. */
 const wreckingBall: SceneDef = {
   id: 'wrecking-ball',
@@ -194,8 +102,17 @@ const wreckingBall: SceneDef = {
     const { world, r } = ctx;
     const gy = 940;
     const fl = ground(ctx, gy, 5000);
-    for (let row = 0; row < 9; row++)
-      for (let k = 0; k < 4; k++) rect(ctx, 1260 + k * 62 + (row % 2) * 31, gy - 20 - row * 40, 60, 38, { role: 'hero', hue: row / 9 }, { friction: 0.7, density: 0.0015 });
+    // Running bond: odd courses start and end with half bricks, so every brick sits on two below.
+    for (let row = 0; row < 9; row++) {
+      const y = gy - 20 - row * 40;
+      const ph = { friction: 0.7, density: 0.0015 };
+      if (row % 2 === 0) for (let k = 0; k < 4; k++) rect(ctx, 1260 + k * 62, y, 60, 38, { role: 'hero', hue: row / 9 }, ph);
+      else {
+        rect(ctx, 1245, y, 29, 38, { role: 'hero', hue: row / 9 }, ph);
+        for (let k = 0; k < 3; k++) rect(ctx, 1291 + k * 62, y, 60, 38, { role: 'hero', hue: row / 9 }, ph);
+        rect(ctx, 1477, y, 29, 38, { role: 'hero', hue: row / 9 }, ph);
+      }
+    }
     const pivot = { x: 900, y: 60 };
     const links = rope(ctx, pivot, { x: 420, y: 380 }, 12, { r: 6, density: 0.004 });
     const ball = circle(ctx, 400, 400, 64, { role: 'accent', trail: 1.2, weight: 1 }, { density: 0.02, frictionAir: 0.0005 });
@@ -243,8 +160,134 @@ const springOrgan: SceneDef = {
     r.link(() => masses.map((m) => r.ipos(m)), 'accent', 1.5);
     r.drawBack((gr) => gr.roundRect(260, top - 16, 1400, 14, 7).fill({ color: ctx.style.structure, alpha: 0.7 }));
     dolly(ctx, W / 2, 520, 1.02, 1.06);
-    return { entry: { x: W / 2, y: 520 }, enter: () => release(...held), step: () => applySprings(springs) };
+    return { entry: { x: W / 2, y: 520 }, enter: () => release(...held) };
   },
 };
 
-export const OSCILLATION: SceneDef[] = [pendulumWave, chaos, lissajous, coupled, wreckingBall, springOrgan];
+/**
+ * Harmonograph — a pen held between two pairs of springs tuned almost exactly 3 : 2. Released,
+ * it swings in both directions at once and slowly loses energy, drawing a rosette that turns and
+ * spirals inward. The drawing stays on the paper.
+ */
+const harmonograph: SceneDef = {
+  id: 'harmonograph',
+  theme: 'oscillation',
+  title: { zh: '谐振画', en: 'Harmonograph' },
+  law: { zh: '两个方向的阻尼振动', en: 'Two damped oscillations at once' },
+  blurb: { zh: '一支笔被横竖两组弹簧牵着，两个方向的频率几乎正好是 3∶2。松手后它同时在两个方向上摆动，又慢慢失去能量，在纸上留下一朵缓缓旋转、向内收拢的花。', en: 'A pen held by two pairs of springs tuned almost exactly 3:2 swings both ways at once and slowly loses energy, leaving a rosette that turns and spirals inward.' },
+  duration: 14,
+  energy: 1,
+  endState: 'periodic',
+  gravity: { x: 0, y: 0 },
+  setup(ctx) {
+    const { r } = ctx;
+    const C = { x: W / 2, y: H / 2 };
+    const Dx = 640;
+    const Dy = 450;
+    const bob = circle(ctx, C.x + 300, C.y - 60, 14, { role: 'accent', weight: 1, impacts: false }, { isStatic: true, frictionAir: 0.0016, density: 0.004 });
+    const m = massOf(bob);
+    // Stiffnesses for x : y = 2 : 3 (slightly detuned so the figure precesses). Each pair is
+    // pre-stretched by 10 %, which also gives it a little sideways stiffness.
+    const wx = (2 * Math.PI * 0.4) / 1000;
+    const wy = wx * 1.5 * 1.004;
+    const Kx = m * wx * wx;
+    const Ky = m * wy * wy;
+    const k1 = (2 * Kx - 0.2 * Ky) / 3.96;
+    const k2 = (2 * Ky - 0.2 * Kx) / 3.96;
+    for (const [ax, ay, k, D] of [[C.x - Dx, C.y, k1, Dx], [C.x + Dx, C.y, k1, Dx], [C.x, C.y - Dy, k2, Dy], [C.x, C.y + Dy, k2, Dy]] as const)
+      spring(ctx, null, { x: ax, y: ay }, bob, { x: 0, y: 0 }, D * 0.9, k, { coils: 12, amp: 7, width: 1.3 });
+    r.drawBack((g) => {
+      for (const [ax, ay] of [[C.x - Dx, C.y], [C.x + Dx, C.y], [C.x, C.y - Dy], [C.x, C.y + Dy]]) g.circle(ax, ay, 9).fill({ color: ctx.style.structure, alpha: 0.9 });
+    });
+    const pen = r.pen('hero', 0.55, 2);
+    let on = false;
+    let k = 0;
+    dolly(ctx, C.x, C.y, 1.0, 1.06);
+    return {
+      entry: C,
+      enter: () => {
+        release(bob);
+        Body.setVelocity(bob, { x: 0, y: wy * 230 * 16.67 });
+        on = true;
+      },
+      step: () => {
+        if (on && ++k % 2 === 0) pen.add(bob.position.x, bob.position.y);
+      },
+    };
+  },
+};
+
+/**
+ * Standing Waves — a taut string, one end shaken by a motor. The motor steps up through the
+ * string's resonances and the string stands in one, two, three, then four loops; the nodes stay still.
+ */
+const standingWave: SceneDef = {
+  id: 'standing-wave',
+  theme: 'oscillation',
+  title: { zh: '驻波', en: 'Standing Waves' },
+  law: { zh: '共振与简正模式', en: 'Resonance and normal modes' },
+  blurb: { zh: '一根张紧的弦，一端由电机上下抖动。抖动频率一档档升高，弦依次共振成一段、两段、三段、四段的驻波，节点处纹丝不动。', en: 'A taut string is shaken at one end; as the motor steps up through its resonances it stands in one, two, three, then four loops, the nodes perfectly still.' },
+  duration: 14,
+  energy: 2,
+  endState: 'periodic',
+  gravity: { x: 0, y: 0 },
+  setup(ctx) {
+    const { r, tl } = ctx;
+    const T = tuned('standing-wave', { amp: 34, air: 0.003, hold: 3.1 });
+    const n = 40;
+    const x0 = 250;
+    const x1 = 1670;
+    const y0 = 540;
+    const a = (x1 - x0) / n;
+    const driver = staticRect(ctx, x0, y0, 22, 64, 'accent');
+    const end = staticCircle(ctx, x1, y0, 10, 'structure');
+    const beads: MBody[] = [];
+    for (let i = 1; i < n; i++) beads.push(circle(ctx, x0 + i * a, y0, 5, { role: 'structure', impacts: false }, { frictionAir: T.air, density: 0.004, collisionFilter: { group: -7 } }));
+    // Tension for a fundamental of 0.5 Hz: c = 2·L·f, T = μ·c²; the string is pre-stretched by 25 %.
+    const mu = beads[0].mass / a;
+    const c = (2 * (x1 - x0) * 0.5) / 1000;
+    const eps = 0.25;
+    const k = (mu * c * c) / (a * eps);
+    const chain = [driver, ...beads, end];
+    for (let i = 0; i < chain.length - 1; i++) spring(ctx, chain[i], { x: 0, y: 0 }, chain[i + 1], { x: 0, y: 0 }, a * (1 - eps), k, { draw: false });
+    r.link(() => chain.map((b) => r.ipos(b)), 'hero', 3, 0.5);
+    // A long exposure: the band each point of the string sweeps out.
+    const env = new Float32Array(chain.length);
+    const look = r.look('hero', 0.5);
+    r.drawBack((g, dt) => {
+      const fade = Math.exp(-dt / 0.5);
+      const up: number[] = [];
+      const down: number[] = [];
+      chain.forEach((b, i) => {
+        env[i] = Math.max(env[i] * fade, Math.abs(b.position.y - y0));
+        up.push(b.position.x, y0 - env[i]);
+        down.unshift(b.position.x, y0 + env[i]);
+      });
+      g.poly([...up, ...down], true).fill({ color: look.color, alpha: 0.1 });
+      g.moveTo(x0 - 40, y0).lineTo(x1 + 40, y0).stroke({ width: 1, color: ctx.style.structure, alpha: 0.25 });
+    });
+    let f = 0;
+    let phase = 0;
+    let on = false;
+    const mode = (at: number, hz: number) => tl.during(at, at + 0.6, (p) => (f = f + (hz - f) * p));
+    dolly(ctx, W / 2, y0, 1.0, 1.04);
+    return {
+      entry: { x: x0, y: y0 },
+      enter: () => {
+        on = true;
+        const t0 = tl.t;
+        mode(t0, 0.5);
+        mode(t0 + T.hold, 1.0);
+        mode(t0 + T.hold * 2, 1.5);
+        mode(t0 + T.hold * 3, 2.0);
+      },
+      step: (_t, dt) => {
+        if (!on) return;
+        phase += 2 * Math.PI * f * dt;
+        drive(driver, x0, y0 + Math.sin(phase) * T.amp);
+      },
+    };
+  },
+};
+
+export const OSCILLATION: SceneDef[] = [pendulumWave, chaos, harmonograph, wreckingBall, springOrgan, standingWave];

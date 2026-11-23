@@ -26,6 +26,7 @@ export const cartoon: StyleDef = {
   trail: { kind: 'crisp', width: 9, alpha: 0.35, length: 14, blend: 'normal' },
   particleKinds: ['dot', 'shard'],
   particleBlend: 'normal',
+  water: { color: 0x4d96ff, alpha: 0.4 },
 
   drawBody(g, shapes, look) {
     const c = look.color;

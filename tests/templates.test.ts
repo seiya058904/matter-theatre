@@ -6,12 +6,16 @@ import { SEGUES } from '../src/show/ShowConfig';
 import { Rng } from '../src/core/rng';
 
 describe('template library', () => {
-  it('has sixty templates with unique ids in known families', () => {
-    expect(TEMPLATES.length).toBe(60);
+  it('has sixty-three templates with unique ids in known families', () => {
+    expect(TEMPLATES.length).toBe(63);
     expect(new Set(TEMPLATES.map((t) => t.id)).size).toBe(TEMPLATES.length);
     const fams = new Set(FAMILIES.map((f) => f.id));
     for (const t of TEMPLATES) expect(fams.has(t.theme)).toBe(true);
     for (const f of FAMILIES) expect(TEMPLATES.some((t) => t.theme === f.id)).toBe(true);
+  });
+  it('keeps every family small enough for the library to show it without scrolling', () => {
+    for (const f of FAMILIES) expect(TEMPLATES.filter((t) => t.theme === f.id).length, f.id).toBeLessThanOrEqual(8);
+    expect(FAMILIES.length).toBeLessThanOrEqual(12);
   });
   it('describes every template fully, in both languages', () => {
     for (const t of TEMPLATES) {

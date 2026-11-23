@@ -1,6 +1,6 @@
 import type Matter from 'matter-js';
 import { W, type SceneDef } from '../core/types';
-import { Bodies, Body, Composite, Constraint, circle, compound, dolly, ground, link, open, pin, polygon, rect, release, shape, staticCircle, staticRect, wallPath, type MBody, type Pt } from './kit';
+import { Bodies, Body, Composite, Constraint, ball, compound, dolly, ground, link, pin, polygon, rect, release, staticCircle, staticRect, wallPath, type MBody, type Pt } from './kit';
 
 /** Balance Scale — weights drop into the pans; the beam tips, then settles level. */
 const balance: SceneDef = {
@@ -68,7 +68,7 @@ const rolyPoly: SceneDef = {
       r.add(world, toy, { role: 'hero', hue: i / 3, weight: 1 });
       toys.push(toy);
     }
-    const balls = [0, 1, 2].map((i) => circle(ctx, 60 + i * 52, gy - 260 - i * 20, 24, { role: 'accent', trail: 1.5, weight: 1 }, { isStatic: true, density: 0.004, restitution: 0.3 }));
+    const balls = [0, 1, 2].map((i) => ball(ctx, 60 + i * 52, gy - 260 - i * 20, 24, { role: 'accent', trail: 1.5, weight: 1 }, { isStatic: true, density: 0.004, restitution: 0.3 }));
     dolly(ctx, 1000, 700, 1.05, 1.0);
     return { entry: { x: 1000, y: gy - 120 }, enter: () => balls.forEach((b, i) => tl.at(tl.t + i * 1.2, () => release(b))), dispose: () => void toys };
   },
@@ -97,42 +97,10 @@ const pyramid: SceneDef = {
       for (let k = 0; k < n; k++) rect(ctx, x0 + (k - (n - 1) / 2) * (s + 1), gy - s / 2 - row * s, s, s, { role: 'hero', hue: row / rows }, { friction: 0.6, restitution: 0.05, density: 0.0012 });
     }
     wallPath(ctx, [{ x: 40, y: 180 }, { x: 520, y: 700 }, { x: 600, y: 745 }, { x: 680, y: 735 }, { x: 740, y: 705 }], 20, 'structure', { friction: 0.02 });
-    const ball = circle(ctx, 90, 160, 42, { role: 'accent', trail: 1.6, weight: 1 }, { density: 0.02, friction: 0.02, restitution: 0.1 });
-    // A solid ball's true moment of inertia (Matter quadruples it), so it rolls out fast.
-    Body.setInertia(ball, (ball.mass * 42 * 42) / 2);
-    Body.setStatic(ball, true);
+    const wreck = ball(ctx, 90, 160, 42, { role: 'accent', trail: 1.6, weight: 1 }, { density: 0.02, friction: 0.3, restitution: 0.1, isStatic: true });
     ctx.r.impactMin = 4;
     dolly(ctx, 860, 600, 0.96, 1.0);
-    return { entry: { x: x0, y: gy - 200 }, floors: [fl], enter: () => release(ball) };
-  },
-};
-
-/** Log Pile — a wedge is pulled and a stack of logs rolls apart. */
-const logPile: SceneDef = {
-  id: 'log-pile',
-  theme: 'stacking',
-  title: { zh: '原木堆', en: 'Log Pile' },
-  law: { zh: '支撑与滚动', en: 'Support and rolling' },
-  blurb: { zh: '撤掉一侧的楔块，三角堆叠的圆木失去支撑，一根接一根滚落散开。', en: 'One wedge is pulled; the triangular log stack loses its support and rolls apart.' },
-  duration: 11,
-  energy: 3,
-  endState: 'settle',
-  presettle: 0.8,
-  setup(ctx) {
-    const gy = 900;
-    ground(ctx, gy, 5000, 960, { friction: 0.9 });
-    staticRect(ctx, 1840, gy - 80, 30, 160, 'structure', 0, { restitution: 0.3 });
-    const r0 = 40;
-    const x0 = 760;
-    for (let row = 0; row < 5; row++) {
-      const n = 5 - row;
-      for (let k = 0; k < n; k++) circle(ctx, x0 + (k - (n - 1) / 2) * r0 * 2.02, gy - r0 - row * r0 * 1.74, r0, { role: 'hero', hue: (row * 0.2 + k * 0.05) % 1, weight: 1 }, { friction: 0.5, restitution: 0.05, density: 0.002 });
-    }
-    const left = staticRect(ctx, x0 - 5 * r0 - 12, gy - 22, 40, 44, 'structure', 0.4);
-    const right = staticRect(ctx, x0 + 5 * r0 + 12, gy - 22, 40, 44, 'accent', -0.4);
-    void left;
-    dolly(ctx, 1000, 700, 1.1, 0.95, 1150);
-    return { entry: { x: x0, y: gy - 120 }, enter: () => open(ctx, right) };
+    return { entry: { x: x0, y: gy - 200 }, floors: [fl], enter: () => release(wreck) };
   },
 };
 
@@ -146,7 +114,7 @@ const mobile: SceneDef = {
   duration: 12,
   energy: 1,
   endState: 'periodic',
-  presettle: 0.6,
+  presettle: 1.5,
   setup(ctx) {
     const { world, r } = ctx;
     const top = { x: W / 2, y: 150 };
@@ -171,7 +139,7 @@ const mobile: SceneDef = {
     tie(b1, { x: top.x - 310, y: y1 }, b2, { x: top.x - 310, y: y2 - lift });
     const b3 = bar(top.x + 327, y2, 360, 0.7);
     tie(b1, { x: top.x + 327, y: y1 }, b3, { x: top.x + 327, y: y2 - lift });
-    const s1 = circle(ctx, top.x - 480, y3, 26, { role: 'hero', hue: 0.05, weight: 1 }, { density: 0.002, ...air });
+    const s1 = ball(ctx, top.x - 480, y3, 26, { role: 'hero', hue: 0.05, weight: 1 }, { density: 0.002, ...air });
     tie(b2, { x: top.x - 480, y: y2 }, s1, { x: top.x - 480, y: y3 - 24 });
     const s2 = polygon(ctx, top.x - 140, y3, 3, 32, { role: 'hero', hue: 0.2, weight: 1 }, { density: 0.0032, ...air });
     tie(b2, { x: top.x - 140, y: y2 }, s2, { x: top.x - 140, y: y3 - 12 });
@@ -182,41 +150,10 @@ const mobile: SceneDef = {
     const basket = compound(ctx, [Bodies.rectangle(bx, y3 + 22, 84, 8), Bodies.rectangle(bx - 40, y3 - 14, 6, 72), Bodies.rectangle(bx + 40, y3 - 14, 6, 72)], { role: 'hero', hue: 0.8, weight: 1 }, { density: 0.0026, ...air });
     tie(b3, { x: bx, y: y2 }, basket, { x: bx, y: y3 - 22 });
     for (const c of strings) r.constraint(c, 'structure', 1);
-    const pebble = circle(ctx, bx, y3 - 110, 11, { role: 'accent', weight: 1 }, { isStatic: true, density: 0.004, friction: 0.9, restitution: 0 });
+    const pebble = ball(ctx, bx, y3 - 110, 11, { role: 'accent', weight: 1 }, { isStatic: true, density: 0.004, friction: 0.9, restitution: 0 });
     dolly(ctx, W / 2, 470, 1.05, 1.1);
     return { entry: { x: top.x, y: top.y + 200 }, enter: () => release(pebble) };
   },
 };
 
-/** Cairn — flat stones balanced in a stack; one more is set down and the cairn sways but holds. */
-const cairn: SceneDef = {
-  id: 'cairn',
-  theme: 'stacking',
-  title: { zh: '叠石', en: 'Cairn' },
-  law: { zh: '摩擦与平衡', en: 'Friction and balance' },
-  blurb: { zh: '扁平的石头层层叠起，最后一块轻轻落下，石堆微微一晃，依旧稳稳立着。', en: 'Flat stones balanced in a stack; the last one is set down and the cairn sways but holds.' },
-  duration: 10,
-  energy: 1,
-  endState: 'settle',
-  presettle: 1.2,
-  setup(ctx) {
-    const gy = 900;
-    ground(ctx, gy, 4000, 960, { friction: 1 });
-    const stones = [
-      [0, 260, 70, 0.1], [8, 220, 60, 0.3], [-10, 180, 54, 0.5], [6, 150, 46, 0.65], [-4, 110, 40, 0.8],
-    ] as const;
-    let y = gy;
-    for (const [dx, w, h, hue] of stones) {
-      const verts = [
-        { x: -w / 2, y: 0 }, { x: -w * 0.42, y: -h * 0.7 }, { x: -w * 0.1, y: -h }, { x: w * 0.3, y: -h * 0.92 }, { x: w / 2, y: -h * 0.35 }, { x: w * 0.4, y: 0 },
-      ];
-      shape(ctx, W / 2 + dx, y - h / 2, verts, { role: 'hero', hue, weight: 1 }, { friction: 1, frictionStatic: 2, restitution: 0, density: 0.002 });
-      y -= h + 1;
-    }
-    const last = polygon(ctx, W / 2 - 6, y - 140, 6, 34, { role: 'accent', weight: 1 }, { isStatic: true, friction: 1, frictionStatic: 2, restitution: 0, density: 0.002 });
-    dolly(ctx, W / 2, 660, 1.15, 1.25);
-    return { entry: { x: W / 2, y: y }, enter: () => release(last) };
-  },
-};
-
-export const STACKING: SceneDef[] = [balance, rolyPoly, pyramid, logPile, mobile, cairn];
+export const STACKING: SceneDef[] = [balance, rolyPoly, pyramid, mobile];

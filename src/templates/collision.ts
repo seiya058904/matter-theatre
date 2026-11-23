@@ -1,7 +1,7 @@
 import Matter from 'matter-js';
 import { H, W, type SceneDef } from '../core/types';
 import { lerp, smooth } from '../core/ease';
-import { Bodies, Body, Composite, Constraint, circle, dolly, ground, link, rect, release, setPositionV, staticRect, type MBody } from './kit';
+import { Bodies, Body, Composite, Constraint, circle, cushion, dolly, drip, ground, release, setPositionV, staticRect, wallPath, type MBody } from './kit';
 
 /** Newton's Cradle — one ball is let go; momentum passes straight through the row. */
 const cradle: SceneDef = {
@@ -171,7 +171,7 @@ const breakShot: SceneDef = {
         }
         for (const [b, a] of sinking) {
           const v = r.views.get(b);
-          const k2 = a + dt / 0.5;
+          const k2 = a + dt / 0.3;
           sinking.set(b, k2);
           if (v) {
             v.alpha = 1 - smooth(Math.min(1, k2));
@@ -215,65 +215,6 @@ const restitution: SceneDef = {
           release(b);
           // A gentle sideways toss so each bounce draws an arc.
           Body.setVelocity(b, { x: 0.9, y: 0 });
-        }
-      },
-    };
-  },
-};
-
-/** Recoil Carts — a compressed spring between a heavy and a light cart is let go. */
-const recoil: SceneDef = {
-  id: 'recoil-carts',
-  theme: 'collision',
-  title: { zh: '反冲双车', en: 'Recoil Carts' },
-  law: { zh: '动量守恒 · 反冲', en: 'Recoil: momentum conserved' },
-  blurb: { zh: '压缩的弹簧夹在一重一轻两辆小车之间。松开后两车反向冲出，轻车跑得远、重车跑得近。', en: 'A compressed spring between a heavy and a light cart is let go: they fly apart, the light one faster.' },
-  duration: 10,
-  energy: 3,
-  endState: 'settle',
-  presettle: 0.4,
-  setup(ctx) {
-    const { r, world } = ctx;
-    const gy = 820;
-    ground(ctx, gy, 4000);
-    staticRect(ctx, 130, gy - 60, 30, 120, 'structure', 0, { restitution: 0.4 });
-    staticRect(ctx, 1790, gy - 60, 30, 120, 'structure', 0, { restitution: 0.4 });
-    const cart = (x: number, w: number, h: number, dens: number, hue: number) => {
-      const body = rect(ctx, x, gy - 26 - h / 2, w, h, { role: 'hero', hue, weight: 1 }, { density: dens, friction: 0.3 });
-      const wheels = [-1, 1].map((s) => {
-        const wh = circle(ctx, x + s * (w / 2 - 22), gy - 18, 18, { role: 'structure' }, { density: dens * 0.5, friction: 0.9 });
-        link(ctx, body, wh, { pointA: { x: s * (w / 2 - 22), y: h / 2 - 4 }, length: 0 }, false);
-        wh.collisionFilter.group = -3;
-        return wh;
-      });
-      body.collisionFilter.group = -3;
-      return { body, wheels };
-    };
-    const heavy = cart(860, 220, 70, 0.006, 0.1);
-    const light = cart(1060, 130, 54, 0.0018, 0.7);
-    // The spring (drawn as a zigzag) and the latch that keeps it compressed.
-    const spring = Constraint.create({ bodyA: heavy.body, bodyB: light.body, pointA: { x: 110, y: 0 }, pointB: { x: -65, y: 0 }, length: 230, stiffness: 0.035, damping: 0.02 });
-    const latch = Constraint.create({ bodyA: heavy.body, bodyB: light.body, pointA: { x: 110, y: 0 }, pointB: { x: -65, y: 0 }, length: 20, stiffness: 1 });
-    Composite.add(world, [spring, latch]);
-    let springOn = true;
-    r.drawFront((g) => {
-      if (!springOn) return;
-      const a = r.anchor(heavy.body, Matter.Vector.rotate({ x: 110, y: 0 }, heavy.body.angle));
-      const b = r.anchor(light.body, Matter.Vector.rotate({ x: -65, y: 0 }, light.body.angle));
-      const n = 10;
-      g.moveTo(a.x, a.y);
-      for (let i = 1; i < n; i++) g.lineTo(a.x + ((b.x - a.x) * i) / n, a.y + (i % 2 ? -10 : 10));
-      g.lineTo(b.x, b.y).stroke({ width: 3, color: ctx.style.accentColor, alpha: 0.9, join: 'round' });
-    });
-    dolly(ctx, W / 2, 620, 1.18, 0.92);
-    return {
-      entry: { x: 960, y: gy - 60 },
-      enter: () => Composite.remove(world, latch),
-      step: () => {
-        // The spring only pushes: once it reaches its natural length it leaves the carts.
-        if (springOn && Matter.Vector.magnitude(Matter.Vector.sub(light.body.position, heavy.body.position)) > 175 + 230 - 40) {
-          springOn = false;
-          Composite.remove(world, spring);
         }
       },
     };
@@ -328,38 +269,62 @@ const gas: SceneDef = {
   },
 };
 
-/** Curling — one stone glides the length of the ice and knocks out a guard. */
-const curling: SceneDef = {
-  id: 'curling',
+/**
+ * Bounce Sorter — how cranberries are really graded: berries drop one by one onto a hard, tilted
+ * plate. Firm ones bounce high enough to clear a wall into the far bin; soft ones barely bounce
+ * and slide into the near one. Restitution alone does the sorting.
+ */
+const bounceSorter: SceneDef = {
+  id: 'bounce-sorter',
   theme: 'collision',
-  title: { zh: '冰壶', en: 'Curling' },
-  law: { zh: '滑动摩擦与碰撞', en: 'Sliding friction and collisions' },
-  blurb: { zh: '冰壶缓缓滑过整条冰道，轻轻一碰，把守在大本营前的对手壶撞出。', en: 'A stone glides the length of the ice and gently knocks the guard out of the house.' },
+  title: { zh: '弹跳分拣', en: 'Bounce Sorter' },
+  law: { zh: '恢复系数决定去向', en: 'Restitution decides the bin' },
+  blurb: { zh: '越橘真正的分拣方法：果子一颗颗落在倾斜的硬板上，结实的弹得又高又远，越过挡墙落进远处的箱子；发软的几乎不弹，滑进近处的箱子。', en: 'How cranberries are really graded: firm berries bounce over a wall into the far bin, soft ones barely bounce and slide into the near one.' },
   duration: 12,
-  energy: 1,
+  energy: 3,
   endState: 'settle',
-  gravity: { x: 0, y: 0 },
+  canDrop: true,
   setup(ctx) {
-    const { r } = ctx;
-    const cy = H / 2;
-    const lane = { x0: 120, x1: 1800, h: 420 };
-    staticRect(ctx, W / 2, cy - lane.h / 2 - 10, lane.x1 - lane.x0, 20, 'structure', 0, { restitution: 0.6 });
-    staticRect(ctx, W / 2, cy + lane.h / 2 + 10, lane.x1 - lane.x0, 20, 'structure', 0, { restitution: 0.6 });
-    const house = { x: 1540, y: cy };
-    r.drawBack((g) => {
-      const c = ctx.style.structure;
-      for (const [rr, a] of [[180, 0.12], [120, 0.18], [60, 0.24], [18, 0.5]] as const) g.circle(house.x, house.y, rr).fill({ color: c, alpha: a });
-      g.moveTo(lane.x0, cy).lineTo(lane.x1, cy).stroke({ width: 1.5, color: c, alpha: 0.25 });
-      g.moveTo(house.x, cy - lane.h / 2).lineTo(house.x, cy + lane.h / 2).stroke({ width: 1.5, color: c, alpha: 0.25 });
+    const { r, tl, engine, rng } = ctx;
+    engine.gravity.scale = 0.0016;
+    const n = 26;
+    const kinds = Array.from({ length: n }, () => rng.next() < 0.55);
+    // The hopper's nozzle, the anvil plate, the wall, and two bins.
+    const feed = drip(
+      ctx,
+      470,
+      230,
+      n,
+      13,
+      (i) => (kinds[i] ? { role: 'hero', hue: 0.04, weight: 1, trail: 0.9 } : { role: 'debris', hue: 0.62 }),
+      (i) => ({ restitution: kinds[i] ? 0.86 : 0.08, friction: 0.25, density: 0.002, frictionAir: 0.0006 }),
+    );
+    for (const s of [-1, 1]) staticRect(ctx, 470 + s * 22, 150, 8, 260, 'structure');
+    const anvil = staticRect(ctx, 520, 640, 250, 22, 'accent', 0.42, { friction: 0.1 });
+    const wallX = 790;
+    const sep = staticRect(ctx, wallX, 840, 16, 300, 'structure');
+    const floors = [...wallPath(ctx, [{ x: 600, y: 760 }, { x: 610, y: 990 }, { x: wallX, y: 990 }], 14), ...wallPath(ctx, [{ x: wallX, y: 990 }, { x: 1652, y: 990 }], 14)];
+    // The bins are lined with felt: whatever lands there stays there.
+    const back = staticRect(ctx, 1660, 560, 24, 860, 'structure');
+    cushion(ctx, [...floors, sep, back], 0.04);
+    const glow = { v: 0 };
+    Matter.Events.on(engine, 'collisionStart', (e) => {
+      for (const p of e.pairs) if (p.bodyA === anvil || p.bodyB === anvil) glow.v = 1;
     });
-    const stone = { restitution: 0.85, friction: 0.05, frictionAir: 0.0062, density: 0.003 };
-    circle(ctx, house.x - 210, cy + 26, 34, { role: 'hero', hue: 0.85, weight: 1 }, stone);
-    circle(ctx, house.x + 40, cy - 70, 34, { role: 'hero', hue: 0.85, weight: 1 }, stone);
-    circle(ctx, house.x + 120, cy + 95, 34, { role: 'hero', hue: 0.2, weight: 1 }, stone);
-    const shot = circle(ctx, 230, cy + 10, 34, { role: 'hero', hue: 0.2, trail: 2.5, weight: 1 }, stone);
-    dolly(ctx, 900, cy, 1.0, 1.05, 1180);
-    return { entry: { x: 230, y: cy }, enter: () => Body.setVelocity(shot, { x: 8.2, y: 0.15 }) };
+    r.drawBack((g, dt) => {
+      glow.v = Math.max(0, glow.v - dt * 4);
+      g.circle(520, 640, 40 + glow.v * 30).fill({ color: ctx.style.accentColor, alpha: 0.06 + glow.v * 0.14 });
+    });
+    ctx.r.impactMin = 3;
+    dolly(ctx, 980, 560, 1.0, 1.04, 1000, 600);
+    return {
+      entry: { x: 520, y: 600 },
+      floors,
+      enter: () => {
+        for (let i = 0; i < n; i++) tl.at(tl.t + 0.1 + i * 0.3, () => feed.next());
+      },
+    };
   },
 };
 
-export const COLLISION: SceneDef[] = [cradle, stackDrop, breakShot, restitution, recoil, gas, curling];
+export const COLLISION: SceneDef[] = [cradle, stackDrop, breakShot, restitution, gas, bounceSorter];

@@ -17,7 +17,7 @@ export const H = 1080;
 export const STEP = 1 / 120;
 
 /** Families of templates; each shows one kind of physical behaviour. */
-export type Family = 'collision' | 'gravity' | 'granular' | 'stacking' | 'oscillation' | 'rope' | 'soft' | 'machine' | 'chain' | 'field' | 'pattern';
+export type Family = 'collision' | 'gravity' | 'granular' | 'stacking' | 'oscillation' | 'rope' | 'soft' | 'fluid' | 'machine' | 'chain' | 'field' | 'pattern';
 /** Kept as an alias so older code paths read naturally. */
 export type Theme = Family;
 
@@ -45,8 +45,13 @@ export interface SceneContext {
   duration: number;
   /** Seconds after which the segue has finished and the experiment may begin. */
   enterAt: number;
-  /** Time dilation for a beat (a camera effect: physics itself is untouched). */
+  /** Time dilation for a beat: the whole template runs slower for a moment, like a high-speed camera. */
   slowmo(scale: number, hold: number, ease?: number): void;
+  /**
+   * Registers a physical law (a spring, a field, buoyancy, gas pressure) evaluated before every
+   * physics step — also while the template settles off-screen, so a soft body never sags before it is seen.
+   */
+  force(fn: () => void): void;
 }
 
 export interface SceneInstance {

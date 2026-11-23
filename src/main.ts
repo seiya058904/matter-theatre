@@ -1,3 +1,4 @@
+import Matter from 'matter-js';
 import { Stage } from './core/Stage';
 import { Director } from './core/Director';
 import { TEMPLATES, templateById } from './templates';
@@ -13,7 +14,7 @@ function initialShow(q: URLSearchParams): ShowConfig {
   const isScene = (id: string) => !!templateById(id);
   const isStyle = (id: string) => STYLES.some((s) => s.id === id);
   const fromHash = location.hash.startsWith('#show=') ? decodeShow(decodeURIComponent(location.hash.slice(6)), isScene, isStyle) : null;
-  const saved = localStorage.getItem('mt.show.v3');
+  const saved = localStorage.getItem('mt.show.v4');
   let base: ShowConfig = fromHash ?? (saved ? decodeShow(saved, isScene, isStyle) : null) ?? JSON.parse(JSON.stringify(DEFAULT_SHOW));
   if (!base.segments.length) base = JSON.parse(JSON.stringify(DEFAULT_SHOW));
   // Preview/QA overrides: ?only=a,b  ?all  ?style=ink  ?bg=1  ?link=glide
@@ -49,7 +50,7 @@ async function boot(): Promise<void> {
     app.tick();
     stage.govern(tk.deltaMS);
   });
-  Object.assign(window, { __mt: { stage, director, app, TEMPLATES, STYLES, styleById } });
+  Object.assign(window, { __mt: { stage, director, app, TEMPLATES, STYLES, styleById, Matter } });
 }
 
 boot();

@@ -89,6 +89,15 @@ class Trail {
     this.rope.tint = color;
     for (let i = 0; i < n; i++) this.hist.push({ x, y });
   }
+  /** Collapses the trail onto one point (after a headless jump, so it does not draw one long streak). */
+  reset(x: number, y: number): void {
+    for (let i = 0; i < this.n; i++) {
+      this.hist[i].x = x;
+      this.hist[i].y = y;
+      this.points[i].set(x + i * 0.01, y + i * 0.003);
+    }
+  }
+
   push(x: number, y: number): void {
     const h = this.hist.shift()!;
     h.x = x;
@@ -157,6 +166,10 @@ export class BodyView {
   sq: Container | null = null;
   inner: Container | null = null;
   stretch = 1;
+  /** Impact squash: a damped spring (render only) along the last contact normal. */
+  squash = 0;
+  squashV = 0;
+  squashDir = 0;
   built = false;
   private keys: string[] = [];
 
@@ -248,7 +261,8 @@ export class BodyView {
 
 /** Shapes of a body in its local (unrotated) frame. */
 export function shapesOf(b: Body): Shape[] {
-  const parts = b.parts.length > 1 ? b.parts.slice(1) : [b];
+  // Sensor parts (an air pocket inside a hull) are physics only.
+  const parts = b.parts.length > 1 ? b.parts.slice(1).filter((p) => !p.isSensor) : [b];
   const c = Math.cos(-b.angle);
   const s = Math.sin(-b.angle);
   const local = (x: number, y: number) => {
@@ -296,8 +310,42 @@ interface BlobItem {
   bodies: Body[];
   look: Look;
   inflate: number;
+  front: boolean;
 }
 type Drawer = (g: Graphics, dt: number) => void;
+
+/** A persistent pen line, kept as frozen chunks so only the newest stretch is rebuilt each frame. */
+class Pen {
+  readonly layer = new Container();
+  private pts: Pt[] = [];
+  private live = new Graphics();
+  private dirty = false;
+  constructor(
+    private style: StyleDef,
+    private look: Look,
+    private width: number,
+  ) {
+    this.layer.addChild(this.live);
+  }
+  add(x: number, y: number): void {
+    const last = this.pts[this.pts.length - 1];
+    if (last && Math.hypot(x - last.x, y - last.y) < 1.5) return;
+    this.pts.push({ x, y });
+    this.dirty = true;
+  }
+  render(): void {
+    if (!this.dirty) return;
+    this.dirty = false;
+    this.live.clear();
+    if (this.pts.length > 1) this.style.drawLink(this.live, this.pts, this.look, this.width);
+    if (this.pts.length >= 96) {
+      // Freeze this chunk and start the next one from its last point.
+      this.live = new Graphics();
+      this.layer.addChild(this.live);
+      this.pts = [this.pts[this.pts.length - 1]];
+    }
+  }
+}
 
 /**
  * Owns everything a scene draws. Body graphics are built once and only transformed
@@ -310,15 +358,18 @@ export class SceneRenderer {
   readonly back = new Graphics();
   readonly trailLayer = new Container();
   readonly linkG = new Graphics();
+  readonly penLayer = new Container();
   readonly bodyLayer = new Container();
   readonly blobG = new Graphics();
   readonly frontLayer = new Container();
+  readonly blobFrontG = new Graphics();
   readonly front = new Graphics();
   readonly fx: Fx;
   readonly views = new Map<Body, BodyView>();
   private tracked = new Set<Interp>();
   private links: LinkItem[] = [];
   private blobs: BlobItem[] = [];
+  private pens: Pen[] = [];
   private backDrawers: Drawer[] = [];
   private frontDrawers: Drawer[] = [];
   private alpha = 1;
@@ -339,8 +390,10 @@ export class SceneRenderer {
     this.fx = new Fx(style);
     if (style.shadow) this.shadowLayer.alpha = style.shadow.alpha;
     this.blobG.blendMode = style.blend;
+    this.blobFrontG.blendMode = style.blend;
     this.linkG.blendMode = style.blend === 'add' ? 'add' : 'normal';
-    this.root.addChild(this.back, this.shadowLayer, this.trailLayer, this.linkG, this.bodyLayer, this.blobG, this.frontLayer, this.front, this.fx.layer);
+    this.penLayer.blendMode = this.linkG.blendMode;
+    this.root.addChild(this.back, this.shadowLayer, this.penLayer, this.trailLayer, this.linkG, this.bodyLayer, this.blobG, this.frontLayer, this.blobFrontG, this.front, this.fx.layer);
     Matter.Events.on(engine, 'collisionStart', this.onCollide);
   }
 
@@ -438,9 +491,22 @@ export class SceneRenderer {
     this.link(() => (c.label === 'cut' ? [] : [this.anchor(c.bodyA, c.pointA), this.anchor(c.bodyB, c.pointB)]), role, width, hue);
   }
 
-  blob(bodies: Body[], role: Role, hue = 0.5, inflate = 0): void {
+  blob(bodies: Body[], role: Role, hue = 0.5, inflate = 0, front = false): void {
     bodies.forEach((b) => this.track(b));
-    this.blobs.push({ bodies, look: this.look(role, hue, 1), inflate });
+    this.blobs.push({ bodies, look: this.look(role, hue, 1), inflate, front });
+  }
+
+  /** Stops drawing a closed blob (its skin tore and is drawn as an open strip instead). */
+  unblob(bodies: Body[]): void {
+    this.blobs = this.blobs.filter((b) => b.bodies !== bodies);
+  }
+
+  /** A pen that leaves a permanent line (harmonographs, drawing machines). */
+  pen(role: Role, hue = 0.5, width = 2): { add(x: number, y: number): void } {
+    const p = new Pen(this.style, this.look(role, hue, 1), width);
+    this.penLayer.addChild(p.layer);
+    this.pens.push(p);
+    return p;
   }
 
   drawBack(fn: Drawer): void {
@@ -502,6 +568,13 @@ export class SceneRenderer {
       const hero = va && va.opts.role !== 'ground' && va.opts.role !== 'structure' ? va : vb && vb.opts.role !== 'ground' ? vb : (va ?? vb!);
       if (va) va.flash = Math.max(va.flash, 0.3 + s * 0.6);
       if (vb) vb.flash = Math.max(vb.flash, 0.3 + s * 0.6);
+      // Cartoon rigs squash along the contact normal, then spring back (render only).
+      const dir = Math.atan2(n.y, n.x);
+      for (const v of [va, vb]) {
+        if (!v?.sq) continue;
+        v.squashV = Math.min(v.squashV, -(2.5 + s * 9));
+        v.squashDir = dir;
+      }
       this.style.impact(this.fx, sp.x, sp.y, s, hero.look.color);
     }
   };
@@ -518,14 +591,28 @@ export class SceneRenderer {
     v.node.alpha = v.alpha;
     v.node.scale.set(v.scale);
     if (v.sq && v.inner) {
-      // Stretch along the direction of travel (velocity is in px per 1/60 s).
+      if (dt > 0) {
+        // Impact squash: a stiff, lightly damped spring (about 6 Hz).
+        const w = 38;
+        v.squashV += (-w * w * v.squash - 2 * 0.32 * w * v.squashV) * dt;
+        v.squash = Math.max(-0.34, Math.min(0.3, v.squash + v.squashV * dt));
+      }
+      // Only genuinely fast motion stretches (velocity is in px per 1/60 s).
       const vel = v.body.velocity;
       const speed = Math.hypot(vel.x, vel.y);
-      const target = 1 + Math.min(speed / 45, 0.24);
-      if (dt > 0) v.stretch += (target - v.stretch) * Math.min(1, dt * 14);
-      const dir = speed > 0.3 ? Math.atan2(vel.y, vel.x) - a : 0;
+      const target = 1 + Math.min(Math.max(0, speed - 9) / 70, 0.16);
+      if (dt > 0) v.stretch += (target - v.stretch) * Math.min(1, dt * 12);
+      let dir: number;
+      let k: number;
+      if (Math.abs(v.squash) > 0.012) {
+        dir = v.squashDir - a;
+        k = 1 + v.squash;
+      } else {
+        dir = speed > 0.3 ? Math.atan2(vel.y, vel.x) - a : 0;
+        k = v.stretch;
+      }
       v.sq.rotation = dir;
-      v.sq.scale.set(v.stretch, 1 / v.stretch);
+      v.sq.scale.set(k, 1 / k);
       v.inner.rotation = -dir;
     }
     if (v.hi) {
@@ -561,8 +648,10 @@ export class SceneRenderer {
         if (pts.length > 1) this.style.drawLink(this.linkG, pts, l.look, l.width);
       }
     }
-    if (this.blobs.length) {
+    for (const p of this.pens) p.render();
+    if (this.blobs.length || this.blobG.context.instructions.length || this.blobFrontG.context.instructions.length) {
       this.blobG.clear();
+      this.blobFrontG.clear();
       for (const b of this.blobs) {
         const pts = b.bodies.map((x) => this.ipos(x));
         if (b.inflate) {
@@ -582,7 +671,7 @@ export class SceneRenderer {
             p.y += (dy / d) * b.inflate;
           }
         }
-        this.style.drawBody(this.blobG, [{ kind: 'blob', pts }], b.look);
+        this.style.drawBody(b.front ? this.blobFrontG : this.blobG, [{ kind: 'blob', pts }], b.look);
       }
     }
     if (this.frontDrawers.length) {
@@ -590,6 +679,11 @@ export class SceneRenderer {
       for (const d of this.frontDrawers) d(this.front, dt);
     }
     this.fx.update(dt);
+  }
+
+  /** Restarts every trail at its body's current position (after a headless jump). */
+  resetTrails(): void {
+    for (const v of this.views.values()) if (v.trail) v.trail.reset(v.body.position.x, v.body.position.y);
   }
 
   destroy(): void {

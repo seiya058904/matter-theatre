@@ -5,8 +5,8 @@ import { Rng } from '../core/rng';
 import { TEMPLATES, FAMILIES, templateById } from '../templates';
 import { STYLES, styleById } from '../styles';
 import { css, ramp } from '../styles/color';
-import { LINKS, SEGUES, type LinkMode, type Segue, type ShowConfig } from '../show/ShowConfig';
-import { DEFAULT_SHOW, PRESETS, shuffleShow } from '../show/presets';
+import { LINKS, type LinkMode, type Segue, type ShowConfig } from '../show/ShowConfig';
+import { PRESETS, shuffleShow } from '../show/presets';
 import { encodeShow } from '../show/serialize';
 import { Recorder, download, pickFormat } from '../export/Recorder';
 import { getLang, setLang, t, type Key } from './i18n';
@@ -18,15 +18,16 @@ const ICON = {
   pause: svg('<path d="M7 5h3.5v14H7zM13.5 5H17v14h-3.5z"/>', true),
   prev: svg('<path d="M6 5h2v14H6zM19 5.5v13L9.5 12z"/>', true),
   next: svg('<path d="M16 5h2v14h-2zM5 5.5v13L14.5 12z"/>', true),
-  compose: svg('<path d="M3 6h18M3 18h18M7 6v12M17 6v12"/>'),
+  compose: svg('<rect x="3.5" y="4" width="17" height="10" rx="2"/><path d="M5 19h3M10.5 19h3M16 19h3"/>'),
   export: svg('<path d="M12 4v11M7.5 10.5 12 15l4.5-4.5M5 19h14"/>'),
   full: svg('<path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/>'),
-  close: svg('<path d="M6 6l12 12M18 6 6 18"/>'),
+  close: svg('<path d="M7 7l10 10M17 7 7 17"/>'),
   plus: svg('<path d="M12 5v14M5 12h14"/>'),
   shuffle: svg('<path d="M4 7h3.5l9 10H20M4 17h3.5l2.5-2.8M14 9.8 16.5 7H20M17.5 4.5 20 7l-2.5 2.5M17.5 14.5 20 17l-2.5 2.5"/>'),
   link: svg('<path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/>'),
-  reset: svg('<path d="M5 12a7 7 0 1 0 2-5M5 4v4h4"/>'),
   loop: svg('<path d="M17 7H8a4 4 0 0 0 0 8h1M14 4l3 3-3 3M7 17h9a4 4 0 0 0 0-8h-1"/>'),
+  chevron: svg('<path d="M7 10l5 5 5-5"/>'),
+  grip: svg('<circle cx="9" cy="8" r="1.3"/><circle cx="15" cy="8" r="1.3"/><circle cx="9" cy="12" r="1.3"/><circle cx="15" cy="12" r="1.3"/><circle cx="9" cy="16" r="1.3"/><circle cx="15" cy="16" r="1.3"/>', true),
 };
 
 /** One glyph per segue, drawn like chalk diagrams. */
@@ -63,28 +64,45 @@ function button(html: string, label: string, onClick: (e: MouseEvent) => void, c
 const fmt = (s: number) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
 const pad = (n: number) => String(n).padStart(2, '0');
 const clone = <T,>(v: T): T => JSON.parse(JSON.stringify(v));
+const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
+
+interface Rect {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+interface Reorder {
+  from: number;
+  to: number;
+  startX: number;
+  step: number;
+  cards: HTMLElement[];
+}
 
 /**
- * The interface has two states.
- * Watching: nothing but a hairline of progress at the bottom edge, with quiet controls on hover.
- * Composing: the stage rises into a framed monitor and an editing bench slides up beneath it —
- * the running order as a strip of frames joined by segue knobs, the template library and the looks.
+ * Two states. Watching: the picture fills the window; a small capsule of controls floats over its
+ * lower edge only while the pointer moves. Composing: the stage glides into a rounded monitor; a
+ * slim bar of looks runs along the top, the template library stands on the right, and the running
+ * order lies along the bottom as a row of cue cards joined by segue knobs — all on one fixed screen.
  */
 export class App {
   cfg: ShowConfig;
   private root = document.getElementById('ui')!;
+  private stageEl = document.getElementById('stage')!;
   private brand = el('div', 'brand');
   private transport = el('div', 'transport');
-  private rail = el('div', 'rail');
-  private railHead = el('i', 'rail-head');
+  private bar = el('div', 'bar');
+  private barHead = el('i', 'bar-head');
   private playBtn!: HTMLButtonElement;
   private now = el('div', 'now');
   private clock = el('span', 'clock');
   private monitor = el('div', 'monitor');
-  private bench = el('section', 'bench');
-  private stripEl = el('ol', 'strip');
-  private libEl = el('div', 'library');
-  private sideEl = el('div', 'side');
+  private top = el('header', 'topbar');
+  private library = el('aside', 'library');
+  private deck = el('section', 'deck');
+  private strip = el('ol', 'strip');
   private popover = el('div', 'popover');
   private toastEl = el('div', 'toast');
   private hint = el('div', 'hint');
@@ -96,8 +114,10 @@ export class App {
   private thumbGen = 0;
   private recording = false;
   private recorder = new Recorder();
-  private dragFrom = -1;
   private lastIndex = -1;
+  private composing = false;
+  private reorder: Reorder | null = null;
+  private recBox: HTMLElement | null = null;
 
   constructor(
     private stage: Stage,
@@ -105,16 +125,18 @@ export class App {
     initial: ShowConfig,
   ) {
     this.cfg = initial;
-    this.bench.setAttribute('aria-label', t('compose'));
-    this.root.append(this.brand, this.monitor, this.transport, this.bench, this.popover, this.toastEl, this.hint);
+    this.deck.setAttribute('aria-label', t('order'));
+    this.library.setAttribute('aria-label', t('library'));
+    this.deck.append(this.strip);
+    this.root.append(this.monitor, this.brand, this.top, this.library, this.deck, this.transport, this.popover, this.toastEl, this.hint);
     this.buildTransport();
-    this.buildBench();
     this.director.onItem = () => this.onItem();
     this.apply(initial, 0);
     this.bindInput();
     this.hint.textContent = t('hint');
-    setTimeout(() => this.hint.classList.add('gone'), 7000);
-    window.addEventListener('resize', () => this.layoutMonitor());
+    setTimeout(() => this.hint.classList.add('gone'), 6500);
+    window.addEventListener('resize', () => this.layout());
+    this.layout();
   }
 
   // ---------------- show state ----------------
@@ -124,13 +146,13 @@ export class App {
     this.cfg = cfg;
     const style = styleById(cfg.style);
     if (styleChanged || !this.stage.finish) this.stage.applyStyle(style, cfg.bg);
-    this.director.load(cfg, style, Math.max(0, Math.min(startItem, cfg.segments.length - 1)));
+    this.director.load(cfg, style, clamp(startItem, 0, Math.max(0, cfg.segments.length - 1)));
     document.documentElement.style.setProperty('--accent', style.accent);
-    localStorage.setItem('mt.show.v3', encodeShow(cfg));
+    localStorage.setItem('mt.show.v4', encodeShow(cfg));
     history.replaceState(null, '', '#show=' + encodeShow(cfg));
     this.renderBrand();
-    this.renderRail();
-    if (this.isComposing()) this.renderBench();
+    this.renderBar();
+    if (this.composing) this.renderCompose();
   }
 
   private update(mut: (c: ShowConfig) => void, startItem?: number): void {
@@ -140,48 +162,38 @@ export class App {
   }
 
   private onItem(): void {
-    this.renderRail();
-    if (this.isComposing()) this.markStrip();
+    this.renderBar();
+    if (this.composing) this.markStrip();
   }
 
-  // ---------------- watching ----------------
+  // ---------------- transport (both states) ----------------
 
   private buildTransport(): void {
+    this.transport.innerHTML = '';
+    this.bar = el('div', 'bar');
+    this.barHead = el('i', 'bar-head');
     this.playBtn = button(ICON.pause, t('pause'), () => this.togglePlay(), 'icon play');
-    const left = el('div', 'cluster');
-    left.append(
-      button(ICON.prev, t('prev'), () => this.step(-1)),
-      this.playBtn,
-      button(ICON.next, t('next'), () => this.step(1)),
-      this.now,
+    const keys = el('div', 'keys');
+    keys.append(button(ICON.prev, t('prev'), () => this.step(-1)), this.playBtn, button(ICON.next, t('next'), () => this.step(1)));
+    const side = el('div', 'side');
+    side.append(
+      button(`${ICON.compose}<span>${t('compose')}</span>`, t('compose'), () => this.toggleCompose(), 'pill quiet compose'),
+      button(ICON.export, t('export'), () => this.openExport(), 'icon'),
+      button(t('lang'), t('langName'), () => this.toggleLang(), 'icon lang'),
+      button(ICON.full, t('fullscreen'), () => this.toggleFull(), 'icon'),
     );
-    const right = el('div', 'cluster');
-    const lang = button('', t('langName'), () => this.toggleLang(), 'text lang');
-    right.append(
-      this.clock,
-      button(`${ICON.compose}<span>${t('compose')}</span>`, t('compose'), () => this.toggleBench(), 'text compose'),
-      button(`${ICON.export}<span>${t('export')}</span>`, t('export'), () => this.openExport(), 'text'),
-      lang,
-      button(ICON.full, t('fullscreen'), () => this.toggleFull()),
-    );
-    this.rail.append(this.railHead);
-    this.rail.addEventListener('click', (e) => {
-      const r = this.rail.getBoundingClientRect();
-      const x = (e.clientX - r.left) / r.width;
+    this.bar.append(this.barHead);
+    this.bar.addEventListener('click', (e) => {
+      const r = this.bar.getBoundingClientRect();
       const d = this.director;
-      const at = x * d.total;
+      const at = ((e.clientX - r.left) / r.width) * d.total;
       const i = d.items.findIndex((it) => at >= it.start && at < it.start + it.dur);
       if (i >= 0) d.seek(i);
     });
-    const row = el('div', 'transport-row');
-    row.append(left, right);
-    this.transport.append(this.rail, row);
-    this.refreshText();
-  }
-
-  private refreshText(): void {
-    this.transport.querySelector('.lang')!.textContent = t('lang');
-    this.hint.textContent = t('hint');
+    const mid = el('div', 'mid');
+    mid.append(this.now, this.bar, this.clock);
+    this.transport.append(keys, mid, side);
+    this.renderBar();
   }
 
   private renderBrand(): void {
@@ -189,41 +201,40 @@ export class App {
     this.brand.innerHTML = `<b>物理剧场</b><span>Matter Theatre</span><em>${s.name[getLang()]}</em>`;
   }
 
-  /** The hairline: one tick per template, coloured along the look's ramp. */
-  private renderRail(): void {
+  /** The show's progress line: one segment per template, in the look's colours. */
+  private renderBar(): void {
     const d = this.director;
-    this.rail.querySelectorAll('.tick').forEach((n) => n.remove());
-    if (!d.items.length) return;
-    const st = styleById(this.cfg.style);
+    this.bar.querySelectorAll('.seg').forEach((n) => n.remove());
     const lang = getLang();
+    const st = styleById(this.cfg.style);
     d.items.forEach((it, i) => {
-      const tick = el('span', 'tick' + (i === d.currentIndex ? ' on' : ''));
-      tick.style.left = `${(it.start / d.total) * 100}%`;
-      tick.style.width = `${(it.dur / d.total) * 100}%`;
-      tick.style.setProperty('--c', css(ramp(st.ramp, d.items.length > 1 ? i / (d.items.length - 1) : 0.5)));
-      tick.dataset.label = it.def.title[lang];
-      this.rail.insertBefore(tick, this.railHead);
+      const seg = el('span', 'seg' + (i === d.currentIndex ? ' on' : ''));
+      seg.style.left = `${(it.start / Math.max(d.total, 1e-6)) * 100}%`;
+      seg.style.width = `${(it.dur / Math.max(d.total, 1e-6)) * 100}%`;
+      seg.style.setProperty('--c', css(ramp(st.ramp, d.items.length > 1 ? i / (d.items.length - 1) : 0.5)));
+      seg.dataset.label = `${pad(i + 1)}  ${it.def.title[lang]}`;
+      this.bar.insertBefore(seg, this.barHead);
     });
     const cur = d.items[d.currentIndex];
-    if (cur) this.now.innerHTML = `<b>${pad(d.currentIndex + 1)}</b><span>${cur.def.title[lang]}</span>`;
+    this.now.innerHTML = cur ? `<b>${pad(d.currentIndex + 1)}</b><span>${cur.def.title[lang]}</span><em>${cur.def.law[lang]}</em>` : '';
   }
 
   tick(): void {
     const d = this.director;
     if (d.total > 0) {
       const p = Math.min(1, d.passTime / d.total);
-      this.railHead.style.transform = `translateX(${p * this.rail.clientWidth}px)`;
+      this.barHead.style.left = `${p * 100}%`;
       this.clock.textContent = `${fmt(d.passTime)} / ${fmt(d.total)}`;
-      if (this.isComposing()) {
+      if (this.composing) {
         const it = d.items[d.currentIndex];
-        const tile = this.stripEl.children[d.currentIndex * 2] as HTMLElement | undefined;
-        if (it && tile) tile.style.setProperty('--p', String(Math.min(1, Math.max(0, (d.passTime - it.start) / it.dur))));
+        const card = this.strip.querySelector<HTMLElement>(`.cue[data-i="${d.currentIndex}"]`);
+        if (it && card) card.style.setProperty('--p', String(clamp((d.passTime - it.start) / it.dur, 0, 1)));
       }
     }
     if (d.currentIndex !== this.lastIndex) {
       this.lastIndex = d.currentIndex;
-      this.renderRail();
-      if (this.isComposing()) this.markStrip();
+      this.renderBar();
+      if (this.composing) this.markStrip();
     }
     const playing = d.playing;
     if (this.playBtn.dataset.state !== String(playing)) {
@@ -250,16 +261,10 @@ export class App {
   private toggleLang(): void {
     const next: Lang = getLang() === 'zh' ? 'en' : 'zh';
     setLang(next);
-    // Rebuild the chrome in the new language.
-    this.transport.innerHTML = '';
-    this.rail = el('div', 'rail');
-    this.railHead = el('i', 'rail-head');
     this.buildTransport();
-    this.bench.innerHTML = '';
-    this.buildBench();
     this.renderBrand();
-    this.renderRail();
-    if (this.isComposing()) this.renderBench();
+    this.hint.textContent = t('hint');
+    if (this.composing) this.renderCompose();
   }
 
   private toggleFull(): void {
@@ -281,16 +286,16 @@ export class App {
         if (e.key === 'Escape') this.stopRecording(true);
         return;
       }
-      if (e.code === 'Space') {
+      if (e.code === 'Space' && !(e.target as HTMLElement)?.closest('button')) {
         e.preventDefault();
         this.togglePlay();
-      } else if (e.key === 'ArrowRight') this.step(1);
-      else if (e.key === 'ArrowLeft') this.step(-1);
-      else if (e.key === 'e' || e.key === 'E') this.toggleBench();
+      } else if (e.key === 'ArrowRight' && !e.altKey) this.step(1);
+      else if (e.key === 'ArrowLeft' && !e.altKey) this.step(-1);
+      else if (e.key === 'e' || e.key === 'E') this.toggleCompose();
       else if (e.key === 'f' || e.key === 'F') this.toggleFull();
       else if (e.key === 'Escape') {
         if (this.popover.classList.contains('open')) this.closePopover();
-        else this.toggleBench(false);
+        else this.toggleCompose(false);
       }
       wake();
     });
@@ -301,92 +306,107 @@ export class App {
     document.body.classList.remove('idle');
     clearTimeout(this.idleTimer);
     this.idleTimer = window.setTimeout(() => {
-      if (this.director.playing && !this.isComposing() && !this.transport.matches(':hover')) document.body.classList.add('idle');
-    }, 2600);
+      if (this.director.playing && !this.composing && !this.transport.matches(':hover')) document.body.classList.add('idle');
+    }, 2400);
   }
 
   private toast(msg: string): void {
     this.toastEl.textContent = msg;
     this.toastEl.classList.add('show');
     clearTimeout(Number(this.toastEl.dataset.t));
-    this.toastEl.dataset.t = String(setTimeout(() => this.toastEl.classList.remove('show'), 2200));
+    this.toastEl.dataset.t = String(setTimeout(() => this.toastEl.classList.remove('show'), 2000));
+  }
+
+  // ---------------- layout ----------------
+
+  /**
+   * Places everything for the current state. While composing, the full-window canvas is moved and
+   * scaled by a compositor transform so its 16:9 picture lands exactly in the monitor, and clipped
+   * to the monitor's rounded corners — nothing is re-rendered.
+   */
+  private layout(): void {
+    const W = window.innerWidth;
+    const H = window.innerHeight;
+    const pw = Math.min(W, (H * 16) / 9);
+    const ph = (pw * 9) / 16;
+    const px = (W - pw) / 2;
+    const py = (H - ph) / 2;
+    const st = this.stageEl.style;
+    const rootStyle = document.documentElement.style;
+    if (!this.composing) {
+      st.transform = 'translate(0px, 0px) scale(1)';
+      st.clipPath = `inset(0px 0px 0px 0px round 0px)`;
+      return;
+    }
+    const g = W < 1200 ? 10 : 16;
+    const narrow = W < 860;
+    const topH = 56;
+    const n = Math.max(1, this.cfg.segments.length);
+    const stripW = W - g * 2;
+    // Cue cards shrink to fit the whole running order on one line.
+    const knob = 28;
+    const cardW = clamp((stripW - 24 - n * knob) / n, 56, 168);
+    const cardH = Math.round((cardW * 9) / 16);
+    const stripH = Math.max(cardH, 46) + 30;
+    const libW = narrow ? 0 : Math.round(clamp(W * 0.22, 288, 380));
+    const transportH = 48;
+    const area: Rect = { x: g, y: topH + g * 0.5, w: W - libW - g * (narrow ? 2 : 3), h: H - topH - stripH - transportH - g * 2.5 };
+    if (narrow) area.h = Math.min(area.h, H * 0.34);
+    const mw = Math.min(area.w, (area.h * 16) / 9);
+    const mh = (mw * 9) / 16;
+    const mon: Rect = { x: area.x + (area.w - mw) / 2, y: area.y, w: mw, h: mh };
+    const s = mon.w / pw;
+    st.transform = `translate(${mon.x - px * s}px, ${mon.y - py * s}px) scale(${s})`;
+    const r = 12 / s;
+    st.clipPath = `inset(${py}px ${W - px - pw}px ${H - py - ph}px ${px}px round ${r}px)`;
+    const set = (k: string, v: number) => rootStyle.setProperty(k, `${Math.round(v * 10) / 10}px`);
+    set('--mon-x', mon.x);
+    set('--mon-y', mon.y);
+    set('--mon-w', mon.w);
+    set('--mon-h', mon.h);
+    set('--lib-w', libW);
+    set('--strip-h', stripH);
+    set('--card-w', cardW);
+    set('--card-h', cardH);
+    set('--gap', g);
+    set('--top-h', topH);
   }
 
   // ---------------- composing ----------------
 
-  private isComposing(): boolean {
-    return document.body.classList.contains('composing');
-  }
-
-  private toggleBench(force?: boolean): void {
-    const open = force ?? !this.isComposing();
-    if (open === this.isComposing()) return;
+  private toggleCompose(force?: boolean): void {
+    const open = force ?? !this.composing;
+    if (open === this.composing) return;
+    this.composing = open;
     document.body.classList.toggle('composing', open);
-    this.bench.setAttribute('aria-hidden', String(!open));
     this.closePopover();
-    this.transport.querySelector('.compose span')!.textContent = open ? t('done') : t('compose');
     if (open) {
       const cur = this.director.items[this.director.currentIndex];
       if (cur) this.family = cur.def.theme;
-      this.renderBench();
+      this.renderCompose();
     }
-    this.layoutMonitor();
+    this.layout();
     this.wake();
   }
 
-  /** Shrinks the stage into a framed monitor above the bench (pure CSS transform: no re-render). */
-  private layoutMonitor(): void {
-    const W = window.innerWidth;
-    const H = window.innerHeight;
-    const bench = this.bench.getBoundingClientRect().height || Math.min(470, Math.max(320, H * 0.46));
-    const margin = 18;
-    const s = Math.max(0.3, (H - bench - margin * 2 - 26) / H);
-    const ty = margin + 26;
-    document.documentElement.style.setProperty('--mon-s', s.toFixed(4));
-    document.documentElement.style.setProperty('--mon-y', `${ty}px`);
-    // The letterboxed 16:9 picture inside the full-window canvas, after the transform.
-    const cw = Math.min(W, (H * 16) / 9);
-    const ch = (cw * 9) / 16;
-    const x0 = (W - cw) / 2;
-    const y0 = (H - ch) / 2;
-    const left = W / 2 + (x0 - W / 2) * s;
-    const top = ty + y0 * s;
-    Object.assign(this.monitor.style, { left: `${left}px`, top: `${top}px`, width: `${cw * s}px`, height: `${ch * s}px` });
-  }
-
-  private buildBench(): void {
-    const head = el('header', 'bench-head');
-    const title = el('h2');
-    title.textContent = t('order');
-    const note = el('p', 'bench-note');
-    note.textContent = t('orderNote');
-    head.append(title, note);
-    const stripWrap = el('div', 'strip-wrap');
-    stripWrap.append(this.stripEl);
-    const lower = el('div', 'bench-lower');
-    lower.append(this.libEl, this.sideEl);
-    this.bench.append(head, stripWrap, lower);
-    this.bench.setAttribute('aria-hidden', 'true');
-  }
-
-  private renderBench(): void {
+  private renderCompose(): void {
     this.thumbQueue = [];
     this.thumbGen++;
+    this.renderTop();
     this.renderStrip();
     this.renderLibrary();
-    this.renderSide();
-    requestAnimationFrame(() => this.layoutMonitor());
+    this.layout();
   }
 
   /**
    * Thumbnails ship pre-rendered (public/thumbs/<look>/<id>.jpg), so composing never simulates
    * anything. Only a missing file falls back to rendering one in idle time.
    */
-  private thumb(def: SceneDef, cls = ''): HTMLImageElement {
-    const img = el('img', cls);
+  private thumb(def: SceneDef): HTMLImageElement {
+    const img = el('img');
     img.alt = '';
     img.decoding = 'async';
-    img.loading = 'lazy';
+    img.draggable = false;
     const key = this.cfg.style + '/' + this.cfg.bg + '/' + def.id;
     const cached = this.thumbs.get(key);
     if (cached) {
@@ -407,67 +427,107 @@ export class App {
     return img;
   }
 
-  /** The running order: frames joined by segue knobs, ending in a knob that loops back. */
+  /** The top bar: looks as gels, the backdrop, the default segue, house shows and the show's actions. */
+  private renderTop(): void {
+    const lang = getLang();
+    this.top.innerHTML = '';
+    const brand = el('div', 'wordmark', `<b>物理剧场</b><span>Matter Theatre</span>`);
+    const looks = el('div', 'group gels');
+    looks.setAttribute('role', 'radiogroup');
+    looks.setAttribute('aria-label', t('look'));
+    for (const st of STYLES) {
+      const stops = [0, 0.25, 0.5, 0.75, 1].map((k) => css(ramp(st.ramp, k))).join(',');
+      const on = st.id === this.cfg.style;
+      const b = button(`<i style="background:conic-gradient(from 210deg,${stops},${css(ramp(st.ramp, 0))})"></i><span>${st.name[lang]}</span>`, `${st.name[lang]} — ${st.mood[lang]}`, () => this.update((c) => (c.style = st.id)), 'gel' + (on ? ' on' : ''));
+      b.setAttribute('role', 'radio');
+      b.setAttribute('aria-checked', String(on));
+      looks.append(b);
+    }
+    const style = styleById(this.cfg.style);
+    const drops = el('div', 'seg-ctl');
+    drops.setAttribute('role', 'radiogroup');
+    drops.setAttribute('aria-label', t('backdrop'));
+    drops.style.setProperty('--i', String(this.cfg.bg));
+    drops.append(el('i', 'thumb-ind'));
+    style.backgrounds.forEach((bg, i) => {
+      const b = button(bg.name[lang], `${t('backdrop')}: ${bg.name[lang]}`, () => this.update((c) => (c.bg = i as 0 | 1)), i === this.cfg.bg ? 'on' : '');
+      b.setAttribute('role', 'radio');
+      b.setAttribute('aria-checked', String(i === this.cfg.bg));
+      drops.append(b);
+    });
+    const segue = button(`${SEGUE_ICON[this.cfg.link]}<span>${t(`link.${this.cfg.link}` as Key)}</span>${ICON.chevron}`, t('segueDefault'), (e) => this.openLinkMenu(e.currentTarget as HTMLElement), 'drop-btn');
+    const segWrap = el('div', 'labelled');
+    segWrap.append(el('small', '', t('segueDefault')), segue);
+    const shows = button(`<span>${t('houseShows')}</span>${ICON.chevron}`, t('houseShows'), (e) => this.openShowsMenu(e.currentTarget as HTMLElement), 'drop-btn');
+    const acts = el('div', 'acts');
+    acts.append(
+      shows,
+      button(ICON.shuffle, t('shuffle'), () => this.apply(shuffleShow(new Rng((Math.random() * 1e9) | 0), 12, this.cfg.style), 0), 'icon'),
+      button(ICON.link, t('share'), () => this.share(), 'icon'),
+      button(ICON.export, t('export'), () => this.openExport(), 'icon'),
+      button(t('lang'), t('langName'), () => this.toggleLang(), 'icon lang'),
+      button(t('done'), t('done'), () => this.toggleCompose(false), 'pill'),
+    );
+    this.top.append(brand, looks, drops, segWrap, acts);
+  }
+
+  /** The running order: cue cards joined by segue knobs; the last knob loops back to the start. */
   private renderStrip(): void {
     const lang = getLang();
-    const d = this.director;
-    this.stripEl.innerHTML = '';
+    this.strip.innerHTML = '';
+    this.strip.classList.toggle('empty', !this.cfg.segments.length);
     if (!this.cfg.segments.length) {
       const e = el('li', 'strip-empty');
       e.textContent = t('empty');
-      this.stripEl.append(e);
+      this.strip.append(e);
       return;
     }
     const st = styleById(this.cfg.style);
+    const n = this.cfg.segments.length;
     this.cfg.segments.forEach((seg, i) => {
       const def = templateById(seg.id);
       if (!def) return;
-      const li = el('li', 'frame');
-      li.draggable = true;
+      const li = el('li', 'cue');
+      li.dataset.i = String(i);
       li.tabIndex = 0;
-      li.setAttribute('aria-label', `${pad(i + 1)} ${def.title[lang]}`);
-      li.style.setProperty('--c', css(ramp(st.ramp, this.cfg.segments.length > 1 ? i / (this.cfg.segments.length - 1) : 0.5)));
+      li.title = `${pad(i + 1)} ${def.title[lang]} — ${def.law[lang]}`;
+      li.setAttribute('aria-label', li.title);
+      li.style.setProperty('--c', css(ramp(st.ramp, n > 1 ? i / (n - 1) : 0.5)));
       const pic = el('div', 'pic');
-      pic.append(this.thumb(def));
-      const cap = el('div', 'cap');
-      cap.innerHTML = `<b>${pad(i + 1)}</b><span>${def.title[lang]}</span>`;
-      const len = button(t(`len${seg.len}` as Key), t('lenTitle'), () => this.update((c) => (c.segments[i].len = ((seg.len + 1) % 3) as 0 | 1 | 2), i), 'len');
-      const rm = button(ICON.close, t('remove'), () => this.update((c) => c.segments.splice(i, 1), Math.max(0, i - 1)), 'rm');
-      li.append(pic, cap, len, rm);
-      li.addEventListener('click', () => d.seek(i));
+      pic.append(this.thumb(def), el('b', 'num', pad(i + 1)), el('span', 'grip', ICON.grip));
+      const len = button(t(`len${seg.len}` as Key), t('lenTitle'), () => this.update((c) => (c.segments[i].len = ((seg.len + 1) % 3) as 0 | 1 | 2), i), 'len' + (seg.len !== 1 ? ' set' : ''));
+      const rm = button(ICON.close, t('remove'), () => this.removeAt(i), 'rm');
+      li.append(pic, len, rm);
+      li.addEventListener('pointerdown', (e) => this.pressCue(e, li, i));
       li.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter') d.seek(i);
-        if (e.key === 'Delete' || e.key === 'Backspace') this.update((c) => c.segments.splice(i, 1), Math.max(0, i - 1));
+        if (e.key === 'Enter') this.director.seek(i);
+        else if (e.key === 'Delete' || e.key === 'Backspace') this.removeAt(i);
+        else if (e.altKey && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) {
+          e.preventDefault();
+          this.move(i, i + (e.key === 'ArrowLeft' ? -1 : 1), true);
+        }
       });
-      li.addEventListener('dragstart', (e) => {
-        this.dragFrom = i;
-        li.classList.add('dragging');
-        e.dataTransfer?.setData('text/plain', String(i));
-        if (e.dataTransfer) e.dataTransfer.effectAllowed = 'move';
-      });
-      li.addEventListener('dragend', () => li.classList.remove('dragging'));
-      li.addEventListener('dragover', (e) => {
-        e.preventDefault();
-        li.classList.add('over');
-      });
-      li.addEventListener('dragleave', () => li.classList.remove('over'));
-      li.addEventListener('drop', (e) => {
-        e.preventDefault();
-        li.classList.remove('over');
-        const from = this.dragFrom;
-        this.dragFrom = -1;
-        if (from < 0 || from === i) return;
-        this.update((c) => {
-          const [m] = c.segments.splice(from, 1);
-          c.segments.splice(i, 0, m);
-        }, i);
-      });
-      this.stripEl.append(li);
-      // The knob after this frame is the segue into the next one (the last loops to the first).
-      const into = (i + 1) % this.cfg.segments.length;
-      this.stripEl.append(this.knob(into, i === this.cfg.segments.length - 1));
+      this.strip.append(li);
+      this.strip.append(this.knob((i + 1) % n, i === n - 1));
     });
     this.markStrip();
+  }
+
+  private removeAt(i: number): void {
+    const def = templateById(this.cfg.segments[i]?.id ?? '');
+    this.update((c) => c.segments.splice(i, 1), Math.max(0, Math.min(i, this.cfg.segments.length - 2)));
+    if (def) this.toast(t('removed', { name: def.title[getLang()] }));
+  }
+
+  private move(from: number, to: number, focus = false): void {
+    const n = this.cfg.segments.length;
+    to = clamp(to, 0, n - 1);
+    if (to === from) return;
+    this.update((c) => {
+      const [m] = c.segments.splice(from, 1);
+      c.segments.splice(to, 0, m);
+    }, to);
+    if (focus) this.strip.querySelector<HTMLElement>(`.cue[data-i="${to}"]`)?.focus();
   }
 
   private knob(into: number, isLoop: boolean): HTMLLIElement {
@@ -477,8 +537,8 @@ export class App {
     const chosen = seg?.segue;
     const shown: LinkMode = chosen ?? (this.cfg.link === 'auto' ? auto : this.cfg.link);
     const name = t(`link.${shown}` as Key);
-    const label = chosen ? name : t('autoPicked', { name });
-    const b = button(SEGUE_ICON[shown], `${label}${isLoop ? ' · ' + t('loopBack') : ''}`, (e) => this.openSeguePicker(into, e.currentTarget as HTMLElement), 'knob' + (chosen ? ' set' : ''));
+    const label = `${t('segueInto', { n: into + 1 })} · ${chosen ? name : t('autoPicked', { name })}${isLoop ? ' · ' + t('loopBack') : ''}`;
+    const b = button(SEGUE_ICON[shown], label, (e) => this.openSeguePicker(into, e.currentTarget as HTMLElement), 'knob' + (chosen ? ' set' : ''));
     li.append(b);
     if (isLoop) li.append(el('span', 'loop-mark', ICON.loop));
     return li;
@@ -486,159 +546,300 @@ export class App {
 
   private markStrip(): void {
     const cur = this.director.currentIndex;
-    Array.from(this.stripEl.children).forEach((n, k) => {
-      if (!(n as HTMLElement).classList.contains('frame')) return;
-      const on = k / 2 === cur;
+    this.strip.querySelectorAll<HTMLElement>('.cue').forEach((n) => {
+      const on = Number(n.dataset.i) === cur;
       n.classList.toggle('live', on);
-      if (on) (n as HTMLElement).style.setProperty('--p', '0');
+      if (on) n.style.setProperty('--p', '0');
     });
-    const tile = this.stripEl.children[cur * 2] as HTMLElement | undefined;
-    if (tile && this.isComposing()) {
-      const wrap = this.stripEl.parentElement!;
-      const l = tile.offsetLeft - wrap.clientWidth / 2 + tile.clientWidth / 2;
-      wrap.scrollTo({ left: Math.max(0, l), behavior: 'smooth' });
-    }
   }
 
-  private openSeguePicker(into: number, anchor: HTMLElement): void {
-    this.popover.innerHTML = '';
-    const from = templateById(this.cfg.segments[(into - 1 + this.cfg.segments.length) % this.cfg.segments.length]?.id ?? '');
-    const current = this.cfg.segments[into]?.segue;
-    const opts: (Segue | 'auto')[] = ['auto', ...SEGUES];
-    for (const s of opts) {
-      const disabled = s === 'drop' && !from?.canDrop;
-      const on = s === 'auto' ? !current : current === s;
-      const b = button(`${SEGUE_ICON[s]}<span>${t(`link.${s}` as Key)}</span>`, disabled ? t('dropNeedsFloor') : t(`link.${s}` as Key), () => {
-        this.closePopover();
-        this.update((c) => {
-          if (s === 'auto') delete c.segments[into].segue;
-          else c.segments[into].segue = s;
-        }, into);
-      }, 'opt' + (on ? ' on' : ''));
-      b.disabled = disabled;
-      this.popover.append(b);
+  // ---------------- drag to reorder (cards follow the pointer) ----------------
+
+  private pressCue(e: PointerEvent, card: HTMLElement, index: number): void {
+    if (e.button !== 0 || (e.target as HTMLElement).closest('button')) return;
+    const startX = e.clientX;
+    const startY = e.clientY;
+    let moved = false;
+    card.setPointerCapture(e.pointerId);
+    card.classList.add('pressed');
+    const onMove = (ev: PointerEvent) => {
+      if (!moved && Math.hypot(ev.clientX - startX, ev.clientY - startY) > 6) {
+        moved = true;
+        this.beginReorder(card, index, startX);
+      }
+      if (moved) this.moveReorder(ev.clientX);
+    };
+    const onUp = (ev: PointerEvent) => {
+      card.removeEventListener('pointermove', onMove);
+      card.removeEventListener('pointerup', onUp);
+      card.removeEventListener('pointercancel', onUp);
+      card.classList.remove('pressed');
+      if (moved) this.endReorder(ev.type === 'pointercancel');
+      else this.director.seek(index);
+    };
+    card.addEventListener('pointermove', onMove);
+    card.addEventListener('pointerup', onUp);
+    card.addEventListener('pointercancel', onUp);
+  }
+
+  private beginReorder(card: HTMLElement, from: number, startX: number): void {
+    const cards = Array.from(this.strip.querySelectorAll<HTMLElement>('.cue'));
+    const step = cards.length > 1 ? cards[1].getBoundingClientRect().left - cards[0].getBoundingClientRect().left : card.offsetWidth;
+    this.reorder = { from, to: from, startX, step, cards };
+    this.strip.classList.add('reordering');
+    card.classList.add('lifted');
+    this.closePopover();
+  }
+
+  private moveReorder(x: number): void {
+    const r = this.reorder;
+    if (!r) return;
+    const n = r.cards.length;
+    const dx = clamp(x - r.startX, -r.from * r.step - 20, (n - 1 - r.from) * r.step + 20);
+    r.to = clamp(r.from + Math.round(dx / r.step), 0, n - 1);
+    r.cards.forEach((c, j) => {
+      if (j === r.from) c.style.transform = `translateX(${dx}px) translateY(-6px) scale(1.06)`;
+      else if (j > r.from && j <= r.to) c.style.transform = `translateX(${-r.step}px)`;
+      else if (j < r.from && j >= r.to) c.style.transform = `translateX(${r.step}px)`;
+      else c.style.transform = '';
+    });
+  }
+
+  private endReorder(cancel: boolean): void {
+    const r = this.reorder;
+    this.reorder = null;
+    if (!r) return;
+    const card = r.cards[r.from];
+    if (cancel || r.to === r.from) {
+      this.strip.classList.remove('reordering');
+      r.cards.forEach((c) => (c.style.transform = ''));
+      card.classList.remove('lifted');
+      return;
     }
-    this.popover.classList.add('open');
-    const r = anchor.getBoundingClientRect();
-    const pw = 236;
-    this.popover.style.left = `${Math.min(window.innerWidth - pw - 12, Math.max(12, r.left + r.width / 2 - pw / 2))}px`;
-    this.popover.style.top = `${r.top - 12}px`;
-    (this.popover.querySelector('.opt.on') as HTMLElement | null)?.focus();
+    // Settle into the slot, then commit.
+    card.style.transform = `translateX(${(r.to - r.from) * r.step}px)`;
+    card.classList.remove('lifted');
+    setTimeout(() => {
+      this.strip.classList.remove('reordering');
+      this.move(r.from, r.to);
+    }, 160);
+  }
+
+  // ---------------- library ----------------
+
+  /** Family tabs and the cards of one family. Click a card to add it; drag it onto the strip to place it. */
+  private renderLibrary(): void {
+    const lang = getLang();
+    this.library.innerHTML = '';
+    const fams = el('nav', 'families');
+    fams.setAttribute('aria-label', t('library'));
+    for (const f of FAMILIES) {
+      const b = button(f.name[lang], f.name[lang], () => {
+        this.family = f.id;
+        this.renderLibrary();
+      }, 'fam' + (f.id === this.family ? ' on' : ''));
+      fams.append(b);
+    }
+    const grid = el('div', 'cards');
+    const counts = new Map<string, number>();
+    for (const s of this.cfg.segments) counts.set(s.id, (counts.get(s.id) ?? 0) + 1);
+    const defs = TEMPLATES.filter((x) => x.theme === this.family);
+    for (const def of defs) {
+      const card = el('button', 'card');
+      card.type = 'button';
+      card.title = def.blurb[lang];
+      const pic = el('div', 'pic');
+      pic.append(this.thumb(def));
+      const c = counts.get(def.id);
+      if (c) pic.append(el('span', 'badge', t('inShow', { n: c })));
+      pic.append(el('span', 'add', ICON.plus));
+      const meta = el('div', 'meta', `<b>${def.title[lang]}</b><em>${def.law[lang]}</em>`);
+      card.append(pic, meta);
+      card.addEventListener('pointerdown', (e) => this.pressCard(e, card, def));
+      card.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          this.addTemplate(def, this.cfg.segments.length);
+        }
+      });
+      grid.append(card);
+    }
+    this.library.append(fams, grid);
+  }
+
+  private addTemplate(def: SceneDef, at: number): void {
+    this.update((c) => c.segments.splice(at, 0, { id: def.id, len: 1 }), at);
+    this.toast(t('added', { name: def.title[getLang()] }));
+  }
+
+  /** A library card: a click adds it at the end; dragging it lifts a copy that can be dropped anywhere on the strip. */
+  private pressCard(e: PointerEvent, card: HTMLElement, def: SceneDef): void {
+    if (e.button !== 0) return;
+    const startX = e.clientX;
+    const startY = e.clientY;
+    let ghost: HTMLElement | null = null;
+    let at = -1;
+    const marker = el('i', 'insert');
+    card.setPointerCapture(e.pointerId);
+    card.classList.add('pressed');
+    const onMove = (ev: PointerEvent) => {
+      if (!ghost && Math.hypot(ev.clientX - startX, ev.clientY - startY) > 8) {
+        ghost = el('div', 'ghost');
+        const img = card.querySelector('img');
+        if (img) ghost.append(img.cloneNode() as HTMLImageElement);
+        document.body.append(ghost);
+        this.strip.append(marker);
+        document.body.classList.add('dragging-card');
+      }
+      if (!ghost) return;
+      ghost.style.transform = `translate(${ev.clientX - 60}px, ${ev.clientY - 40}px) rotate(-3deg)`;
+      at = this.insertionAt(ev.clientX, ev.clientY);
+      marker.classList.toggle('on', at >= 0);
+      if (at >= 0) marker.style.left = `${this.insertionX(at)}px`;
+    };
+    const onUp = () => {
+      card.removeEventListener('pointermove', onMove);
+      card.removeEventListener('pointerup', onUp);
+      card.removeEventListener('pointercancel', onUp);
+      card.classList.remove('pressed');
+      document.body.classList.remove('dragging-card');
+      marker.remove();
+      if (ghost) {
+        ghost.remove();
+        if (at >= 0) this.addTemplate(def, at);
+      } else this.addTemplate(def, this.cfg.segments.length);
+    };
+    card.addEventListener('pointermove', onMove);
+    card.addEventListener('pointerup', onUp);
+    card.addEventListener('pointercancel', onUp);
+  }
+
+  /** Where on the strip a dragged card would go (or -1 when it is not over the strip). */
+  private insertionAt(x: number, y: number): number {
+    const r = this.deck.getBoundingClientRect();
+    if (y < r.top - 30 || y > r.bottom + 10) return -1;
+    const cards = Array.from(this.strip.querySelectorAll<HTMLElement>('.cue'));
+    for (let i = 0; i < cards.length; i++) {
+      const c = cards[i].getBoundingClientRect();
+      if (x < c.left + c.width / 2) return i;
+    }
+    return cards.length;
+  }
+
+  private insertionX(at: number): number {
+    const cards = Array.from(this.strip.querySelectorAll<HTMLElement>('.cue'));
+    const s = this.strip.getBoundingClientRect();
+    if (!cards.length) return 12;
+    if (at >= cards.length) return cards[cards.length - 1].getBoundingClientRect().right - s.left + 10;
+    return cards[at].getBoundingClientRect().left - s.left - 10;
+  }
+
+  // ---------------- popovers ----------------
+
+  /** One popover, grown out of the control that opened it. */
+  private openPopover(anchor: HTMLElement, build: (box: HTMLElement) => void, place: 'above' | 'below'): void {
+    this.popover.innerHTML = '';
+    this.popover.className = 'popover ' + place;
+    build(this.popover);
+    const a = anchor.getBoundingClientRect();
+    const w = this.popover.offsetWidth;
+    const h = this.popover.offsetHeight;
+    const left = clamp(a.left + a.width / 2 - w / 2, 10, window.innerWidth - w - 10);
+    const topY = place === 'above' ? a.top - h - 12 : a.bottom + 10;
+    this.popover.style.left = `${left}px`;
+    this.popover.style.top = `${topY}px`;
+    this.popover.style.setProperty('--ax', `${a.left + a.width / 2 - left}px`);
+    requestAnimationFrame(() => this.popover.classList.add('open'));
+    (this.popover.querySelector('.opt.on') as HTMLElement | null)?.focus({ preventScroll: true });
   }
 
   private closePopover(): void {
     this.popover.classList.remove('open');
   }
 
-  /** Family rail + the cards of one family. A click adds the template and plays it. */
-  private renderLibrary(): void {
-    const lang = getLang();
-    this.libEl.innerHTML = '';
-    const railEl = el('nav', 'families');
-    railEl.setAttribute('aria-label', t('library'));
-    for (const f of FAMILIES) {
-      const count = TEMPLATES.filter((x) => x.theme === f.id).length;
-      const b = button(`<span>${f.name[lang]}</span><small>${count}</small>`, f.name[lang], () => {
-        this.family = f.id;
-        this.renderLibrary();
-      }, 'fam' + (f.id === this.family ? ' on' : ''));
-      railEl.append(b);
+  private segueOptions(box: HTMLElement, current: LinkMode, pick: (s: LinkMode) => void, disable: (s: LinkMode) => boolean): void {
+    const grid = el('div', 'opts');
+    for (const s of LINKS) {
+      const dis = disable(s);
+      const b = button(`${SEGUE_ICON[s]}<span>${t(`link.${s}` as Key)}</span>`, dis ? t('dropNeedsFloor') : t(`link.${s}` as Key), () => {
+        this.closePopover();
+        pick(s);
+      }, 'opt' + (s === current ? ' on' : ''));
+      b.disabled = dis;
+      grid.append(b);
     }
-    const grid = el('div', 'cards');
-    const inShow = new Set(this.cfg.segments.map((s) => s.id));
-    for (const def of TEMPLATES.filter((x) => x.theme === this.family)) {
-      const card = el('button', 'card' + (inShow.has(def.id) ? ' in' : ''));
-      card.type = 'button';
-      card.title = def.blurb[lang];
-      const pic = el('div', 'pic');
-      pic.append(this.thumb(def));
-      if (inShow.has(def.id)) pic.append(el('span', 'badge', t('inShow')));
-      const meta = el('div', 'meta');
-      meta.innerHTML = `<b>${def.title[lang]}</b><em>${def.law[lang]}</em>`;
-      card.append(pic, meta, el('span', 'plus', ICON.plus));
-      card.addEventListener('click', () => {
-        const at = this.cfg.segments.length;
-        this.update((c) => c.segments.push({ id: def.id, len: 1 }), at);
-        this.toast(t('added', { name: def.title[getLang()] }));
-      });
-      grid.append(card);
-    }
-    const head = el('p', 'lib-note');
-    head.textContent = t('addHint');
-    const right = el('div', 'lib-main');
-    right.append(head, grid);
-    this.libEl.append(railEl, right);
-    railEl.querySelector('.fam.on')?.scrollIntoView({ block: 'nearest' });
+    box.append(grid);
   }
 
-  private renderSide(): void {
-    const lang = getLang();
-    this.sideEl.innerHTML = '';
-    // Looks: five lenses.
-    const looks = el('div', 'block');
-    looks.append(el('h3', '', t('styleTitle')));
-    const lenses = el('div', 'lenses');
-    for (const st of STYLES) {
-      const stops = [0, 0.25, 0.5, 0.75, 1].map((k) => css(ramp(st.ramp, k))).join(',');
-      const b = button(`<i style="background:conic-gradient(from 200deg,${stops},${css(ramp(st.ramp, 0))})"></i>`, `${st.name[lang]}: ${st.mood[lang]}`, () => this.update((c) => (c.style = st.id)), 'lens' + (st.id === this.cfg.style ? ' on' : ''));
-      lenses.append(b);
-    }
-    const cur = styleById(this.cfg.style);
-    const caption = el('p', 'lens-cap');
-    caption.innerHTML = `<b>${cur.name[lang]}</b><span>${cur.mood[lang]}</span>`;
-    looks.append(lenses, caption);
-    const bgRow = el('div', 'toggle');
-    bgRow.setAttribute('role', 'group');
-    bgRow.setAttribute('aria-label', t('background'));
-    styleById(this.cfg.style).backgrounds.forEach((bg, i) => {
-      const b = button(bg.name[lang], `${t('background')}: ${bg.name[lang]}`, () => this.update((c) => (c.bg = i as 0 | 1)), i === this.cfg.bg ? 'on' : '');
-      bgRow.append(b);
-    });
-    const bgLabel = el('label', '', t('background'));
-    looks.append(bgLabel, bgRow);
-    // Default segue.
-    const segBlock = el('div', 'block');
-    segBlock.append(el('h3', '', t('segueDefault')));
-    const segRow = el('div', 'segues');
-    for (const l of LINKS) {
-      const b = button(SEGUE_ICON[l], t(`link.${l}` as Key), () => this.update((c) => (c.link = l)), 'seg' + (l === this.cfg.link ? ' on' : ''));
-      segRow.append(b);
-    }
-    segBlock.append(segRow);
-    // House shows.
-    const shows = el('div', 'block');
-    shows.append(el('h3', '', t('houseShows')));
-    const list = el('div', 'shows');
-    for (const p of PRESETS) {
-      const st = styleById(p.cfg.style);
-      const on = encodeShow(p.cfg) === encodeShow(this.cfg);
-      const b = button(`<i style="background:linear-gradient(90deg,${st.ramp.map(css).join(',')})"></i><b>${p.name[lang]}</b><small>${p.note[lang]}</small>`, p.name[lang], () => this.apply(clone(p.cfg), 0), 'show' + (on ? ' on' : ''));
-      list.append(b);
-    }
-    shows.append(list);
-    const acts = el('div', 'acts');
-    acts.append(
-      button(`${ICON.shuffle}<span>${t('shuffle')}</span>`, t('shuffle'), () => this.apply(shuffleShow(new Rng((Math.random() * 1e9) | 0), 12, this.cfg.style), 0), 'text'),
-      button(`${ICON.link}<span>${t('share')}</span>`, t('share'), () => this.share(), 'text'),
-      button(`${ICON.reset}<span>${t('reset')}</span>`, t('reset'), () => this.apply(clone(DEFAULT_SHOW), 0), 'text'),
+  private openSeguePicker(into: number, anchor: HTMLElement): void {
+    const n = this.cfg.segments.length;
+    const from = templateById(this.cfg.segments[(into - 1 + n) % n]?.id ?? '');
+    const current: LinkMode = this.cfg.segments[into]?.segue ?? 'auto';
+    this.openPopover(
+      anchor,
+      (box) => {
+        box.append(el('p', 'pop-title', t('segueInto', { n: into + 1 })));
+        this.segueOptions(
+          box,
+          current,
+          (s) =>
+            this.update((c) => {
+              if (s === 'auto') delete c.segments[into].segue;
+              else c.segments[into].segue = s as Segue;
+            }, into),
+          (s) => s === 'drop' && !from?.canDrop,
+        );
+      },
+      'above',
     );
-    this.sideEl.append(looks, segBlock, shows, acts);
+  }
+
+  private openLinkMenu(anchor: HTMLElement): void {
+    this.openPopover(
+      anchor,
+      (box) => {
+        box.append(el('p', 'pop-title', t('segueDefault')));
+        this.segueOptions(box, this.cfg.link, (s) => this.update((c) => (c.link = s)), () => false);
+      },
+      'below',
+    );
+  }
+
+  private openShowsMenu(anchor: HTMLElement): void {
+    const lang = getLang();
+    this.openPopover(
+      anchor,
+      (box) => {
+        const list = el('div', 'shows');
+        for (const p of PRESETS) {
+          const st = styleById(p.cfg.style);
+          const on = encodeShow(p.cfg) === encodeShow(this.cfg);
+          list.append(
+            button(`<i style="background:linear-gradient(90deg,${st.ramp.map(css).join(',')})"></i><b>${p.name[lang]}</b><small>${p.note[lang]}</small>`, p.name[lang], () => {
+              this.closePopover();
+              this.apply(clone(p.cfg), 0);
+            }, 'opt show' + (on ? ' on' : '')),
+          );
+        }
+        box.append(list);
+      },
+      'below',
+    );
   }
 
   /**
-   * Thumbnails are simulated and rendered one at a time in idle time while the bench is open,
+   * Thumbnails are simulated and rendered one at a time in idle time while composing,
    * then cached for the session so each is built once.
    */
   private pumpThumbs(): void {
     if (this.thumbBusy) return;
     const next = this.thumbQueue.shift();
-    if (!next || !this.isComposing()) return;
+    if (!next || !this.composing) return;
     this.thumbBusy = true;
     const gen = this.thumbGen;
     const run = () => {
       const key = this.cfg.style + '/' + this.cfg.bg + '/' + next.def.id;
       if (gen !== this.thumbGen) {
-        // The look changed while this one waited: it is stale.
         this.thumbBusy = false;
         this.pumpThumbs();
         return;
@@ -674,43 +875,49 @@ export class App {
     const box = el('div', 'dialog');
     box.setAttribute('role', 'dialog');
     box.setAttribute('aria-modal', 'true');
+    box.setAttribute('aria-label', t('exportTitle'));
+    const close = () => {
+      dlg.classList.remove('open');
+      setTimeout(() => dlg.remove(), 200);
+    };
     if (!fmtInfo) {
       box.innerHTML = `<h2>${t('exportTitle')}</h2><p>${t('unsupported')}</p>`;
       const row = el('div', 'row');
-      row.append(button(t('cancel'), t('cancel'), () => dlg.remove(), 'pill ghost'));
+      row.append(button(t('cancel'), t('cancel'), close, 'pill quiet'));
       box.append(row);
     } else {
       box.innerHTML = `<h2>${t('exportTitle')}</h2><p>${t('exportNote', { s: Math.round(this.director.total) })}</p>
         <label>${t('resolution')}</label>
-        <div class="toggle res"><button type="button" data-w="1280" data-h="720">720p</button><button type="button" class="on" data-w="1920" data-h="1080">1080p</button></div>
+        <div class="seg-ctl res" style="--i:1"><i class="thumb-ind"></i><button type="button" data-w="1280" data-h="720">720p</button><button type="button" class="on" data-w="1920" data-h="1080">1080p</button></div>
         <label>${t('format')}</label><p class="fmt">${fmtInfo.label}</p>`;
       const row = el('div', 'row');
       const go = button(t('start'), t('start'), () => {
         const on = box.querySelector<HTMLButtonElement>('.res .on')!;
-        dlg.remove();
+        close();
         this.startRecording(Number(on.dataset.w), Number(on.dataset.h));
       }, 'pill');
-      row.append(button(t('cancel'), t('cancel'), () => dlg.remove(), 'pill ghost'), go);
+      row.append(button(t('cancel'), t('cancel'), close, 'pill quiet'), go);
       box.append(row);
-      box.querySelectorAll<HTMLButtonElement>('.res button').forEach((b) =>
+      const ctl = box.querySelector<HTMLElement>('.res')!;
+      ctl.querySelectorAll<HTMLButtonElement>('button').forEach((b, i) =>
         b.addEventListener('click', () => {
-          box.querySelectorAll('.res button').forEach((x) => x.classList.remove('on'));
+          ctl.querySelectorAll('button').forEach((x) => x.classList.remove('on'));
           b.classList.add('on');
+          ctl.style.setProperty('--i', String(i));
         }),
       );
     }
     dlg.append(box);
-    dlg.addEventListener('click', (e) => e.target === dlg && dlg.remove());
+    dlg.addEventListener('pointerdown', (e) => e.target === dlg && close());
     this.root.append(dlg);
-    box.querySelector<HTMLButtonElement>('.pill:not(.ghost), .pill')?.focus();
+    requestAnimationFrame(() => dlg.classList.add('open'));
+    box.querySelector<HTMLButtonElement>('.row .pill:last-child')?.focus();
   }
-
-  private recBox: HTMLElement | null = null;
 
   private startRecording(w: number, h: number): void {
     const format = pickFormat();
     if (!format) return;
-    this.toggleBench(false);
+    this.toggleCompose(false);
     this.recording = true;
     document.body.classList.add('recording');
     this.stage.lockSize(w, h);
@@ -747,5 +954,6 @@ export class App {
     document.body.classList.remove('recording');
     this.stage.unlockSize();
     this.director.seek(0);
+    this.layout();
   }
 }

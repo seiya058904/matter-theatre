@@ -63,6 +63,8 @@ export interface StyleDef {
   trail: { kind: TrailKind; width: number; alpha: number; length: number; blend: 'normal' | 'add' | 'multiply' };
   particleKinds: ParticleKind[];
   particleBlend: 'normal' | 'add';
+  /** How water is drawn in this look (fill over submerged bodies, plus the surface line). */
+  water: { color: number; alpha: number };
 
   drawBody(g: Graphics, shapes: Shape[], look: Look): void;
   /** Overlay drawn on impact (alpha driven by flash). */

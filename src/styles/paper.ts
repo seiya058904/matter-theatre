@@ -22,24 +22,27 @@ export const paper: StyleDef = {
   trail: { kind: 'dash', width: 5, alpha: 0.55, length: 40, blend: 'normal' },
   particleKinds: ['flake'],
   particleBlend: 'normal',
+  water: { color: 0x7fb9c8, alpha: 0.5 },
 
   drawBody(g, shapes, look) {
     const c = look.color;
     fillShapes(g, shapes, c, 1);
-    strokeShapes(g, shapes, 1.4, darken(c, 0.22), 0.55);
     for (const s of shapes) {
-      if (s.kind === 'circle') {
-        g.circle(s.x ?? 0, s.y ?? 0, s.r * 0.62).stroke({ width: 1, color: darken(c, 0.15), alpha: 0.3 });
-      } else if (s.kind === 'poly' && look.role === 'ground') {
+      if (s.kind === 'poly' && look.role === 'ground') {
         const top = Math.min(...s.pts.map((p) => p.y));
         const xs = s.pts.map((p) => p.x);
         g.moveTo(Math.min(...xs), top + 3).lineTo(Math.max(...xs), top + 3).stroke({ width: 2, color: lighten(c, 0.4), alpha: 0.6 });
-      } else if (s.kind === 'poly' && s.pts.length >= 4) {
-        const a = s.pts[0];
-        const b = s.pts[Math.floor(s.pts.length / 2)];
-        g.moveTo(a.x, a.y).lineTo(b.x, b.y).stroke({ width: 1, color: lighten(c, 0.35), alpha: 0.3 });
+      } else if (s.kind === 'circle' && s.r > 8) {
+        // A cut disc catches the light along its upper edge.
+        const x = s.x ?? 0;
+        const y = s.y ?? 0;
+        g.moveTo(x + Math.cos(-2.6) * s.r * 0.8, y + Math.sin(-2.6) * s.r * 0.8)
+          .arc(x, y, s.r * 0.8, -2.6, -1.1)
+          .stroke({ width: Math.max(1.5, s.r * 0.08), color: lighten(c, 0.45), alpha: 0.55, cap: 'round' });
       }
     }
+    // A thin darker cut edge, as on real card.
+    strokeShapes(g, shapes, 1.3, darken(c, 0.25), 0.5);
   },
   drawFlash(g, shapes) {
     fillShapes(g, shapes, 0xfff8e8, 0.35);

@@ -21,6 +21,7 @@ export const neon: StyleDef = {
   trail: { kind: 'soft', width: 14, alpha: 0.85, length: 30, blend: 'add' },
   particleKinds: ['spark', 'dot'],
   particleBlend: 'add',
+  water: { color: 0x2fd8ff, alpha: 0.13 },
 
   drawBody(g, shapes, look) {
     const c = look.color;
@@ -35,10 +36,13 @@ export const neon: StyleDef = {
     strokeShapes(g, shapes, structural ? 1.8 : 2.4 + (look.weight ?? 0) * 1.2, c, 0.95);
     strokeShapes(g, shapes, 1, lighten(c, 0.75), structural ? 0.3 : 0.75);
     for (const s of shapes) {
-      if (s.kind === 'circle' && s.r > 9) {
+      if (s.kind === 'circle' && s.r > 9 && !structural) {
+        // A small marker light near the rim: it shows the spin without looking like a clock hand.
         const x = s.x ?? 0;
         const y = s.y ?? 0;
-        g.moveTo(x + s.r * 0.3, y).lineTo(x + s.r * 0.78, y).stroke({ width: 2, color: lighten(c, 0.6), alpha: 0.75, cap: 'round' });
+        const d = s.r * 0.62;
+        g.circle(x + d, y, Math.max(1.6, s.r * 0.11)).fill({ color: lighten(c, 0.8), alpha: 0.9 });
+        g.circle(x + d, y, Math.max(3, s.r * 0.22)).fill({ color: c, alpha: 0.18 });
       }
     }
   },

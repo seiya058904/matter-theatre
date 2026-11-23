@@ -1,7 +1,8 @@
 import Matter from 'matter-js';
+import type { Graphics } from 'pixi.js';
 import { W, type SceneDef } from '../core/types';
 import { easeInOutCubic, easeInOutSine } from '../core/ease';
-import { Bodies, Body, Composite, Constraint, arcPts, circle, dolly, ground, fill, funnel, open, rotor, spin, staticRect, wallPath, type MBody } from './kit';
+import { Bodies, Body, Composite, Constraint, arcPts, circle, dolly, ground, fill, funnel, halt, open, release, rotor, spin, staticRect, turn, wallBody, wallPath, type MBody, type Pt } from './kit';
 
 /** Galton Cascade — a hopper opens above a peg lattice; beads pile into a bell curve. */
 const galton: SceneDef = {
@@ -13,7 +14,7 @@ const galton: SceneDef = {
   duration: 13,
   energy: 2,
   endState: 'settle',
-  presettle: 1,
+  presettle: 2.5,
   canDrop: true,
   setup(ctx) {
     const { r, rng } = ctx;
@@ -49,67 +50,74 @@ const galton: SceneDef = {
   },
 };
 
-/** Hourglass — sand pours through the neck; then the glass is turned over. */
+/** Hourglass — sand pours through the neck; then a motor turns the glass over and it pours again. */
 const hourglass: SceneDef = {
   id: 'hourglass',
   theme: 'granular',
   title: { zh: '沙漏翻转', en: 'Hourglass' },
   law: { zh: '颗粒流与重力', en: 'Granular flow under gravity' },
-  blurb: { zh: '砂粒穿过细颈流下；随后整个沙漏被翻转，重力与视角一起旋转，彩色地层再次倾泻。', en: 'Sand pours through the neck; then the glass is turned over and the strata flow back.' },
+  blurb: { zh: '砂粒穿过细颈流下；随后电机把整只沙漏翻转过来，镜头随之转动，彩色地层再次倾泻。', en: 'Sand pours through the neck; then a motor turns the glass over, the camera turning with it, and the strata flow back.' },
   duration: 13,
   energy: 2,
   endState: 'flow',
-  presettle: 1.2,
+  presettle: 2.5,
   setup(ctx) {
-    const { engine, camera, tl, rng, world } = ctx;
-    const cx = W / 2;
-    const cy = 540;
+    const { camera, tl, rng } = ctx;
+    const C = { x: W / 2, y: 540 };
     const half = 360;
     const neck = 36;
     const width = (y: number) => neck + 250 * Math.pow(Math.sin((Math.PI * Math.abs(y)) / 420), 0.85);
-    const left: { x: number; y: number }[] = [];
-    const right: { x: number; y: number }[] = [];
+    const left: Pt[] = [];
+    const right: Pt[] = [];
     for (let i = 0; i <= 36; i++) {
       const y = -half + (i / 36) * half * 2;
-      left.push({ x: cx - width(y), y: cy + y });
-      right.push({ x: cx + width(y), y: cy + y });
+      left.push({ x: C.x - width(y), y: C.y + y });
+      right.push({ x: C.x + width(y), y: C.y + y });
     }
-    wallPath(ctx, left, 16);
-    wallPath(ctx, right, 16);
-    wallPath(ctx, [left[0], right[0]], 16);
-    wallPath(ctx, [left[left.length - 1], right[right.length - 1]], 16);
-    ctx.r.drawBack((g) => {
+    // The glass is one rigid body, so the motor can turn the whole of it.
+    const glass = wallBody(ctx, [...left, ...right.slice().reverse()], 16, 'structure', { friction: 0.05 }, true);
+    const frame = (g: Graphics) => {
       const c = ctx.style.structure;
-      g.roundRect(cx - 330, cy - half - 46, 660, 26, 8).fill({ color: c, alpha: 0.5 });
-      g.roundRect(cx - 330, cy + half + 20, 660, 26, 8).fill({ color: c, alpha: 0.5 });
-      for (const sx of [-1, 1]) g.rect(cx + sx * 318 - 5, cy - half - 30, 10, half * 2 + 60).fill({ color: c, alpha: 0.35 });
+      g.roundRect(C.x - 330, C.y - half - 46, 660, 26, 8).fill({ color: c, alpha: 0.5 });
+      g.roundRect(C.x - 330, C.y + half + 20, 660, 26, 8).fill({ color: c, alpha: 0.5 });
+      for (const sx of [-1, 1]) g.rect(C.x + sx * 318 - 5, C.y - half - 30, 10, half * 2 + 60).fill({ color: c, alpha: 0.35 });
+    };
+    ctx.r.drawBack((g) => {
+      // The wooden frame turns with the glass.
+      const a = ctx.r.iangle(glass);
+      g.setTransform(Math.cos(a), Math.sin(a), -Math.sin(a), Math.cos(a), C.x - C.x * Math.cos(a) + C.y * Math.sin(a), C.y - C.x * Math.sin(a) - C.y * Math.cos(a));
+      frame(g);
+      g.setTransform(1, 0, 0, 1, 0, 0);
     });
     const rad = 11;
     for (let row = 0; row < 11; row++)
       for (let col = -11; col <= 11; col++) {
-        const y = cy - half + 44 + row * (rad * 2.05);
-        const x = cx + col * rad * 2.05 + (row % 2) * rad;
-        if (Math.abs(x - cx) > width(y - cy) - rad * 2) continue;
+        const y = C.y - half + 44 + row * (rad * 2.05);
+        const x = C.x + col * rad * 2.05 + (row % 2) * rad;
+        if (Math.abs(x - C.x) > width(y - C.y) - rad * 2) continue;
         circle(ctx, x + rng.range(-1, 1), y, rad, { role: 'hero', hue: Math.floor(row / 2.2) / 4, impacts: false }, { friction: 0.02, frictionStatic: 0.1, restitution: 0.1, density: 0.002, frictionAir: 0.004 });
       }
     ctx.r.impactsEnabled = false;
-    const gate = staticRect(ctx, cx, cy, neck * 2 + 10, 10, 'accent');
-    const setPhi = (a: number) => {
-      engine.gravity.x = Math.sin(a);
-      engine.gravity.y = Math.cos(a);
-      camera.angle = camera.targetAngle = a;
-    };
-    camera.set(cx, cy, 0.98);
+    const gate = staticRect(ctx, C.x, C.y, neck * 2 + 10, 10, 'accent');
+    camera.set(C.x, C.y, 0.98);
     camera.stiffness = 0.6;
+    let target = 0;
+    let turned = 0;
     return {
-      entry: { x: cx, y: cy },
+      entry: { x: C.x, y: C.y },
       enter: () => {
         open(ctx, gate);
         const t0 = tl.t;
-        tl.during(t0 + 4.4, t0 + 7.2, (p) => setPhi(Math.PI * easeInOutSine(p)));
+        tl.during(t0 + 4.4, t0 + 7.2, (p) => (target = Math.PI * easeInOutSine(p)));
         tl.during(t0 + 4.4, t0 + 7.2, (p) => (camera.targetZoom = 0.98 - 0.1 * Math.sin(Math.PI * p)));
       },
-      dispose: () => void world,
+      step: () => {
+        const da = target - turned;
+        if (da !== 0) turn(glass, da, C);
+        else halt(glass);
+        turned = target;
+        camera.angle = camera.targetAngle = -turned;
+      },
     };
   },
 };
@@ -124,7 +132,7 @@ const avalanche: SceneDef = {
   duration: 11,
   energy: 3,
   endState: 'settle',
-  presettle: 1.5,
+  presettle: 2.5,
   canDrop: true,
   setup(ctx) {
     const { rng } = ctx;
@@ -155,6 +163,7 @@ const waterWheel: SceneDef = {
   duration: 12,
   energy: 3,
   endState: 'flow',
+  presettle: 2,
   setup(ctx) {
     const { world, r } = ctx;
     const { gate } = funnel(ctx, 760, 150, 380, 60, 110, -380);
@@ -171,6 +180,8 @@ const waterWheel: SceneDef = {
     Composite.add(world, Constraint.create({ pointA: { x: cx, y: cy }, bodyB: wheel, length: 0, stiffness: 1 }));
     wallPath(ctx, [{ x: 420, y: 760 }, { x: 560, y: 920 }, { x: 1500, y: 960 }, { x: 1620, y: 820 }], 18);
     ground(ctx, 1040, 4000);
+    staticRect(ctx, 40, 900, 30, 300, 'structure');
+    staticRect(ctx, 1880, 900, 30, 300, 'structure');
     r.impactsEnabled = false;
     dolly(ctx, 920, 560, 1.0, 1.06);
     return { entry: { x: 760, y: 260 }, enter: () => open(ctx, gate) };
@@ -187,7 +198,7 @@ const drum: SceneDef = {
   duration: 12,
   energy: 2,
   endState: 'periodic',
-  presettle: 1.2,
+  presettle: 2.5,
   setup(ctx) {
     const { world, r, rng } = ctx;
     const cx = W / 2;
@@ -277,7 +288,7 @@ const strata: SceneDef = {
   duration: 13,
   energy: 1,
   endState: 'settle',
-  presettle: 1,
+  presettle: 2.5,
   canDrop: true,
   setup(ctx) {
     const { tl, rng } = ctx;
@@ -308,5 +319,55 @@ const strata: SceneDef = {
   },
 };
 
-export const GRANULAR: SceneDef[] = [galton, hourglass, avalanche, waterWheel, drum, sieve, strata];
+/** Ball Pit — a cannonball drops into a pit of two hundred light balls: a crater, a splash, a slow refill. */
+const ballPit: SceneDef = {
+  id: 'ball-pit',
+  theme: 'granular',
+  title: { zh: '球池炮弹', en: 'Ball Pit' },
+  law: { zh: '冲击在颗粒中扩散', en: 'An impact spreading through grains' },
+  blurb: { zh: '两颗沉重的铁球先后砸进铺满彩球的球池，砸出深坑，溅起一片彩球雨，再被慢慢填平。', en: 'Two heavy balls drop into a pit of light coloured balls: a crater, a splash of colour, a slow refill.' },
+  duration: 12,
+  energy: 4,
+  endState: 'settle',
+  presettle: 1.6,
+  canDrop: true,
+  setup(ctx) {
+    const { rng, tl, engine } = ctx;
+    engine.gravity.scale = 0.0016;
+    const pit = wallPath(ctx, [{ x: 250, y: 600 }, { x: 290, y: 960 }, { x: 1630, y: 960 }, { x: 1670, y: 600 }], 18, 'structure', { friction: 0.3 });
+    const fl = ground(ctx, 1030, 4000);
+    for (let i = 0; i < 230; i++) {
+      const col = i % 36;
+      const row = Math.floor(i / 36);
+      const r = rng.range(14, 18.5);
+      circle(ctx, 330 + col * 35.5 + (row % 2) * 17 + rng.range(-2, 2), 930 - row * 33, r, { role: 'hero', hue: rng.next(), impacts: false }, { friction: 0.05, restitution: 0.45, density: 0.001, frictionAir: 0.002 });
+    }
+    const big = { density: 0.03, restitution: 0.15, friction: 0.2, frictionAir: 0.0004, isStatic: true };
+    const a = circle(ctx, 820, 110, 54, { role: 'accent', weight: 1, trail: 1.2 }, big);
+    const b = circle(ctx, 1290, -260, 42, { role: 'accent', weight: 1, trail: 1.2 }, big);
+    ctx.r.impactMin = 6;
+    let hits = 0;
+    Matter.Events.on(engine, 'collisionStart', (e) => {
+      for (const p of e.pairs) {
+        const ball = p.bodyA === a || p.bodyA === b ? p.bodyA : p.bodyB === a || p.bodyB === b ? p.bodyB : null;
+        if (!ball || ball.plugin.hit) continue;
+        ball.plugin.hit = true;
+        hits++;
+        ctx.camera.shake(0.3);
+        if (hits === 1) ctx.slowmo(0.35, 0.35, 0.18);
+      }
+    });
+    dolly(ctx, W / 2, 600, 1.0, 1.05, W / 2, 640);
+    return {
+      entry: { x: 820, y: 780 },
+      floors: [...pit, fl],
+      enter: () => {
+        release(a);
+        tl.at(tl.t + 3.2, () => release(b));
+      },
+    };
+  },
+};
+
+export const GRANULAR: SceneDef[] = [galton, hourglass, avalanche, waterWheel, drum, sieve, strata, ballPit];
 export { easeInOutCubic, arcPts, rotor };

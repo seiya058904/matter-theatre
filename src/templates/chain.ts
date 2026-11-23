@@ -1,6 +1,12 @@
 import Matter from 'matter-js';
 import { W, type SceneDef } from '../core/types';
-import { Bodies, Composite, Constraint, circle, compound, dolly, ground, hingedDomino, pin, release, rotateAbout, staticRect, wallPath, type MBody } from './kit';
+import { Bodies, Composite, Constraint, ball, compound, dolly, ground, pin, rect, release, rotateAbout, staticRect, wallPath, type Ctx, type MBody } from './kit';
+import type { BodyOpts } from '../render/SceneRenderer';
+
+/** A free-standing domino: square-edged and high-friction, so it stands flat and pivots on its front edge as a real one does. */
+function domino(ctx: Ctx, x: number, baseY: number, w: number, h: number, view: BodyOpts): MBody {
+  return rect(ctx, x, baseY - h / 2, w, h, view, { friction: 0.8, frictionStatic: 1, restitution: 0.02, density: 0.002, frictionAir: 0.0005, chamfer: undefined });
+}
 
 /** Domino Growth — hinged dominoes grow 7 % each; a tiny tap ends by ringing a bell. */
 const dominoGrowth: SceneDef = {
@@ -12,9 +18,12 @@ const dominoGrowth: SceneDef = {
   duration: 12,
   energy: 3,
   endState: 'settle',
+  presettle: 0.6,
   canDrop: true,
   setup(ctx) {
-    ctx.engine.gravity.scale = 0.0028;
+    ctx.engine.gravity.scale = 0.0036;
+    // A domino at rest stays at rest until something strikes it (no contact jitter can tip it).
+    ctx.engine.enableSleeping = true;
     const gy = 900;
     const fl = ground(ctx, gy, 5000);
     const n = 22;
@@ -22,19 +31,19 @@ const dominoGrowth: SceneDef = {
     let h = 54;
     const doms: MBody[] = [];
     for (let i = 0; i < n; i++) {
-      doms.push(hingedDomino(ctx, x, gy, Math.max(10, h * 0.16), h, { role: 'hero', hue: i / (n - 1) }));
+      doms.push(domino(ctx, x, gy, Math.max(10, h * 0.16), h, { role: 'hero', hue: i / (n - 1) }));
       x += h * 0.56;
       h *= 1.07;
     }
     const last = doms[n - 1];
     const bellX = last.position.x + h * 0.9;
-    const bell = circle(ctx, bellX, gy - 140, 44, { role: 'accent', weight: 1 }, { density: 0.004, frictionAir: 0.002 });
+    const bell = ball(ctx, bellX, gy - 140, 44, { role: 'accent', weight: 1 }, { density: 0.004, frictionAir: 0.002 });
     pin(ctx, bell, bellX, gy - 460, { length: 320 }, 'structure', 2);
     staticRect(ctx, bellX, gy - 470, 160, 14, 'structure');
     staticRect(ctx, 150, gy - 120, 260, 14, 'structure', 0.42, { friction: 0.02 });
-    const ball = circle(ctx, 60, gy - 200, 16, { role: 'accent', trail: 1.5, weight: 1 }, { isStatic: true, density: 0.004, friction: 0.02 });
+    const starter = ball(ctx, 60, gy - 200, 16, { role: 'accent', trail: 1.5, weight: 1 }, { isStatic: true, density: 0.004, friction: 0.02 });
     dolly(ctx, 960, 640, 1.05, 0.98, 1000, 620);
-    return { entry: { x: 300, y: gy - 60 }, floors: [fl], enter: () => release(ball) };
+    return { entry: { x: 300, y: gy - 60 }, floors: [fl], enter: () => release(starter) };
   },
 };
 
@@ -49,31 +58,34 @@ const dominoStairs: SceneDef = {
   energy: 3,
   endState: 'settle',
   setup(ctx) {
-    ctx.engine.gravity.scale = 0.0034;
+    ctx.engine.gravity.scale = 0.005;
     const doms: MBody[] = [];
-    const per = 6;
+    const per = 5;
+    const steps = 6;
     const h = 72;
     const gap = 40;
-    let x0 = 330;
-    let y = 330;
-    for (let s = 0; s < 4; s++) {
+    let x0 = 300;
+    let y = 300;
+    for (let st = 0; st < steps; st++) {
+      // Short steps: each run ends at its edge and the next begins one gap on, 30 px lower, so a
+      // falling domino always meets the next one high on its face.
       const last = x0 + (per - 1) * gap;
-      // Each step ends exactly at its last domino's hinge, so that domino keeps turning past
-      // flat and its tip sweeps down onto the first domino of the step below.
       const left = x0 - 34;
-      const edge = last + 6;
+      const edge = last + 8;
       staticRect(ctx, (left + edge) / 2, y + 10, edge - left, 20, 'structure');
-      for (let k = 0; k < per; k++) doms.push(hingedDomino(ctx, x0 + k * gap, y, 12, h, { role: 'hero', hue: (s * per + k) / (4 * per - 1) }));
-      x0 = edge + 30;
-      y += 100;
+      for (let k = 0; k < per; k++) doms.push(domino(ctx, x0 + k * gap, y, 12, h, { role: 'hero', hue: (st * per + k) / (steps * per - 1) }));
+      x0 = last + gap;
+      y += 30;
     }
+    // A floor far below catches whatever goes over an edge.
+    staticRect(ctx, 960, 1070, 3000, 40, 'ground');
     // A last ball, knocked off the final step onto the floor.
     staticRect(ctx, x0 + 200, y + 10, 520, 20, 'structure');
-    circle(ctx, x0 - 20, y - 16, 16, { role: 'accent', trail: 1.5, weight: 1 }, { density: 0.002, friction: 0.05, restitution: 0.3 });
+    ball(ctx, x0 - 20, y - 16, 16, { role: 'accent', trail: 1.5, weight: 1 }, { density: 0.002, friction: 0.05, restitution: 0.3 });
     staticRect(ctx, 180, 260, 220, 14, 'structure', 0.38, { friction: 0.02 });
-    const ball = circle(ctx, 90, 210, 15, { role: 'accent', trail: 1.5, weight: 1 }, { isStatic: true, density: 0.004, friction: 0.02 });
-    dolly(ctx, 980, 560, 0.98, 1.02);
-    return { entry: { x: 330, y: 300 }, enter: () => release(ball) };
+    const starter = ball(ctx, 90, 210, 15, { role: 'accent', trail: 1.5, weight: 1 }, { isStatic: true, density: 0.004, friction: 0.02 });
+    dolly(ctx, 930, 430, 1.12, 1.18, 990, 450);
+    return { entry: { x: 330, y: 300 }, enter: () => release(starter) };
   },
 };
 
@@ -87,7 +99,7 @@ const seesawToss: SceneDef = {
   duration: 11,
   energy: 4,
   endState: 'settle',
-  presettle: 0.5,
+  presettle: 1.5,
   canDrop: true,
   setup(ctx) {
     const { world } = ctx;
@@ -99,9 +111,9 @@ const seesawToss: SceneDef = {
     Composite.add(world, Constraint.create({ pointA: pivot, bodyB: plank, pointB: { x: pivot.x - plank.position.x, y: pivot.y - plank.position.y }, length: 0, stiffness: 1 }));
     rotateAbout(plank, 0.26, pivot);
     const lp = Matter.Vector.add(pivot, Matter.Vector.rotate({ x: 222, y: -29 }, 0.26));
-    const light = circle(ctx, lp.x, lp.y, 20, { role: 'hero', hue: 0.1, trail: 4, weight: 1 }, { density: 0.0008, restitution: 0.3, friction: 0.5 });
+    const light = ball(ctx, lp.x, lp.y, 20, { role: 'hero', hue: 0.1, trail: 4, weight: 1 }, { density: 0.0008, restitution: 0.3, friction: 0.5 });
     wallPath(ctx, [{ x: 120, y: 260 }, { x: 420, y: 430 }, { x: 520, y: 450 }], 16, 'structure', { friction: 0.01 });
-    const heavy = circle(ctx, 140, 220, 32, { role: 'accent', trail: 1.5, weight: 1 }, { isStatic: true, density: 0.012, friction: 0.02 });
+    const heavy = ball(ctx, 140, 220, 32, { role: 'accent', trail: 1.5, weight: 1 }, { isStatic: true, density: 0.012, friction: 0.02 });
     // A basket to catch the light ball.
     wallPath(ctx, [{ x: 1300, y: 600 }, { x: 1320, y: 740 }, { x: 1460, y: 740 }, { x: 1480, y: 600 }], 12);
     staticRect(ctx, 1390, 840, 16, 200, 'structure');
@@ -138,7 +150,7 @@ const pendulumRelay: SceneDef = {
       if (i > 0) x += radii[i - 1] + radii[i] + gap;
       xs.push(x);
       const start = i === 0 ? -0.9 : 0;
-      const b = circle(ctx, x + Math.sin(start) * L, beamY + Math.cos(start) * L, radii[i], { role: 'hero', hue: i / (n - 1), trail: 2.2, weight: 1 }, { isStatic: i === 0, frictionAir: 0, friction: 0, restitution: 0.92, density: 0.002 });
+      const b = ball(ctx, x + Math.sin(start) * L, beamY + Math.cos(start) * L, radii[i], { role: 'hero', hue: i / (n - 1), trail: 2.2, weight: 1 }, { isStatic: i === 0, frictionAir: 0, friction: 0, restitution: 0.92, density: 0.002 });
       pin(ctx, b, x, beamY, { length: L }, 'structure', 1.2);
       bobs.push(b);
     }
@@ -160,20 +172,21 @@ const rubeRelay: SceneDef = {
   endState: 'settle',
   setup(ctx) {
     ctx.engine.gravity.scale = 0.0028;
+    ctx.engine.enableSleeping = true;
     const flat = 441;
     // 1. The ramp ends in a short flat run aimed at the pendulum bob.
     wallPath(ctx, [{ x: 110, y: 170 }, { x: 500, y: flat + 29 }, { x: 600, y: flat + 29 }], 14, 'structure', { friction: 0.02 });
     ground(ctx, 1010, 4000);
-    const a = circle(ctx, 140, 122, 22, { role: 'accent', trail: 1.6, weight: 1 }, { isStatic: true, density: 0.006, friction: 0.02, restitution: 0.1 });
+    const a = ball(ctx, 140, 122, 22, { role: 'accent', trail: 1.6, weight: 1 }, { isStatic: true, density: 0.006, friction: 0.02, restitution: 0.1 });
     // 2. The pendulum.
-    const bob = circle(ctx, 640, flat, 26, { role: 'hero', hue: 0.1, weight: 1, trail: 1.2 }, { density: 0.002, frictionAir: 0, restitution: 0.3 });
+    const bob = ball(ctx, 640, flat, 26, { role: 'hero', hue: 0.1, weight: 1, trail: 1.2 }, { density: 0.002, frictionAir: 0, restitution: 0.3 });
     pin(ctx, bob, 640, flat - 300, { length: 300 }, 'structure', 1.4);
     // 3. Nine hinged dominoes on a shelf.
     const shelf = flat + 39;
     staticRect(ctx, 920, shelf + 10, 490, 20, 'structure');
-    for (let i = 0; i < 9; i++) hingedDomino(ctx, 692 + i * 50, shelf, 14, 90, { role: 'hero', hue: 0.2 + (i / 8) * 0.6 });
+    for (let i = 0; i < 9; i++) domino(ctx, 692 + i * 50, shelf, 14, 90, { role: 'hero', hue: 0.2 + (i / 8) * 0.6 });
     // 4. The last ball waits at the shelf's edge; a chute and a cup catch it.
-    circle(ctx, 1150, shelf - 18, 18, { role: 'accent', trail: 1.6, weight: 1 }, { density: 0.003, friction: 0.3, restitution: 0.1 });
+    ball(ctx, 1150, shelf - 18, 18, { role: 'accent', trail: 1.6, weight: 1 }, { density: 0.003, friction: 0.3, restitution: 0.1 });
     wallPath(ctx, [{ x: 1120, y: 620 }, { x: 1470, y: 730 }], 14, 'structure', { friction: 0.02 });
     wallPath(ctx, [{ x: 1520, y: 790 }, { x: 1530, y: 880 }, { x: 1640, y: 880 }, { x: 1650, y: 790 }], 12);
     dolly(ctx, 900, 560, 0.96, 1.0);

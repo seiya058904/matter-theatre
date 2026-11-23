@@ -21,6 +21,7 @@ export const glass: StyleDef = {
   trail: { kind: 'soft', width: 10, alpha: 0.5, length: 26, blend: 'add' },
   particleKinds: ['shard', 'dot'],
   particleBlend: 'add',
+  water: { color: 0x7ef9ff, alpha: 0.11 },
 
   drawBody(g, shapes, look) {
     const c = look.color;
@@ -53,5 +54,5 @@ export const glass: StyleDef = {
     fx.burst({ x, y, n: 1 + Math.round(s * 8), speed: [100, 180 + 420 * s], life: [0.5, 1.0], size: [4, 9], color: [lighten(color, 0.5), lighten(color, 0.2)], kind: 'shard', gravity: 700, drag: 0.3, spin: [4, 12], alpha: 0.75 });
     fx.ring({ x, y, r1: 18 + 80 * s, width: 1.2, color: 0xffffff, life: 0.5 });
   },
-  finish: { grain: 0.03, vignette: 0.55, chroma: 2.4, contrast: 1.04, saturation: 1.05, vignetteColor: 0x02040c, halo: 0.35 },
+  finish: { grain: 0.03, vignette: 0.5, chroma: 1.3, contrast: 1.04, saturation: 1.05, vignetteColor: 0x02040c, halo: 0.35 },
 };
