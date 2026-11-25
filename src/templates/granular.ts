@@ -137,16 +137,20 @@ const avalanche: SceneDef = {
   canDrop: true,
   setup(ctx) {
     const { rng } = ctx;
-    staticRect(ctx, 330, 316, 420, 20, 'structure', 0.07, { friction: 0.3 });
-    staticRect(ctx, 130, 230, 20, 220, 'structure');
-    const gate = staticRect(ctx, 548, 270, 16, 110, 'accent');
+    // The ledge tilts toward the gate: once it lifts the whole mound slumps and pours, rather than only
+    // its front grains trickling away.
+    const tilt = 0.2;
+    const shelfY = (x: number) => 316 + (x - 330) * Math.tan(tilt) - 10;
+    staticRect(ctx, 330, 316, 420, 20, 'structure', tilt, { friction: 0 });
+    staticRect(ctx, 130, 220, 20, 240, 'structure');
+    const gate = staticRect(ctx, 548, 300, 16, 150, 'accent');
     const steps: MBody[] = [];
-    for (let i = 0; i < 6; i++) steps.push(staticRect(ctx, 640 + i * 180, 400 + i * 95, 200, 20, 'structure', 0.12, { friction: 0.35 }));
+    for (let i = 0; i < 6; i++) steps.push(staticRect(ctx, 640 + i * 180, 400 + i * 95, 200, 20, 'structure', 0.12, { friction: 0.1 }));
     const fl = staticRect(ctx, W / 2, 1000, 3000, 30, 'ground', 0, { friction: 0.8 });
     for (let i = 0; i < 110; i++) {
       const x = 160 + (i % 18) * 21 + rng.range(-2, 2);
-      const y = 310 - Math.floor(i / 18) * 21;
-      circle(ctx, x, y, 9.5, { role: 'hero', hue: Math.floor(i / 18) / 6, impacts: false }, { friction: 0.18, frictionStatic: 0.35, restitution: 0.05, density: 0.002, frictionAir: 0.002 });
+      const y = shelfY(x) - 10 - Math.floor(i / 18) * 21;
+      circle(ctx, x, y, 9.5, { role: 'hero', hue: Math.floor(i / 18) / 6, impacts: false }, { friction: 0.08, frictionStatic: 0.15, restitution: 0.05, density: 0.002, frictionAir: 0.002 });
     }
     ctx.r.impactsEnabled = false;
     dolly(ctx, 900, 560, 0.95, 1.0, 1000, 600);
@@ -184,7 +188,8 @@ const waterWheel: SceneDef = {
     staticRect(ctx, 40, 900, 30, 300, 'structure');
     staticRect(ctx, 1880, 900, 30, 300, 'structure');
     r.impactsEnabled = false;
-    dolly(ctx, 920, 560, 1.0, 1.06);
+    // Framed from the hopper's rim to the floor: the whole run of marbles stays in shot.
+    dolly(ctx, 910, 500, 0.96, 1.0, 920, 520);
     return { entry: { x: 760, y: 260 }, enter: () => open(ctx, gate) };
   },
 };
@@ -247,31 +252,34 @@ const sieve: SceneDef = {
   duration: 12,
   energy: 2,
   endState: 'settle',
-  presettle: 1,
+  presettle: 2,
   canDrop: true,
   setup(ctx) {
     const { rng, tl } = ctx;
-    // The grate: short bars along a gentle slope with gaps that pass only the small beads.
+    // The grate: short bars along a slope with gaps that pass only the small beads. A large bead sits only
+    // shallowly in a gap (it would roll out of one on any slope over asin(gap / 2R) ≈ 28°) and keeps rolling.
     const a = { x: 430, y: 420 };
-    const b = { x: 1330, y: 610 };
+    const b = { x: 1330, y: 720 };
     const len = Math.hypot(b.x - a.x, b.y - a.y);
     const ux = (b.x - a.x) / len;
     const uy = (b.y - a.y) / len;
     const ang = Math.atan2(uy, ux);
     const bar = 30;
-    const gap = 21;
-    for (let d = 0; d < len; d += bar + gap) staticRect(ctx, a.x + ux * (d + bar / 2), a.y + uy * (d + bar / 2), bar, 10, 'structure', ang, { friction: 0.05 });
-    wallPath(ctx, [{ x: 300, y: 300 }, { x: a.x - 6, y: a.y - 4 }], 12, 'structure', { friction: 0.05 });
+    const gap = 18;
+    for (let d = 0; d < len; d += bar + gap) staticRect(ctx, a.x + ux * (d + bar / 2), a.y + uy * (d + bar / 2), bar, 10, 'structure', ang, { friction: 0.3 });
+    wallPath(ctx, [{ x: 262, y: 272 }, { x: a.x - 6, y: a.y - 4 }], 12, 'structure', { friction: 0 });
     // Catch tray for the small beads, a bin for the large.
-    const fl1 = wallPath(ctx, [{ x: 380, y: 700 }, { x: 420, y: 900 }, { x: 1290, y: 900 }, { x: 1330, y: 760 }], 16);
-    const fl2 = wallPath(ctx, [{ x: 1350, y: 700 }, { x: 1380, y: 900 }, { x: 1640, y: 900 }, { x: 1670, y: 700 }], 16);
+    const fl1 = wallPath(ctx, [{ x: 380, y: 700 }, { x: 420, y: 900 }, { x: 1290, y: 900 }, { x: 1330, y: 790 }], 16);
+    const fl2 = wallPath(ctx, [{ x: 1350, y: 790 }, { x: 1380, y: 900 }, { x: 1640, y: 900 }, { x: 1670, y: 700 }], 16);
     // The hopper above the head of the grate.
-    const { gate } = funnel(ctx, 340, 150, 260, 70, 90, -150);
+    const { gate } = funnel(ctx, 340, 150, 260, 90, 90, -260);
+    // Large beads are slick and roll the whole grate; small ones grip, so they slow enough to drop through
+    // a gap rather than skip across it.
     const beads: MBody[] = [];
-    for (let i = 0; i < 64; i++) {
+    for (let i = 0; i < 60; i++) {
       const big = i % 3 === 0;
-      const r = big ? 15 : 7.5;
-      beads.push(circle(ctx, 240 + (i % 8) * 25 + rng.range(-2, 2), 130 - Math.floor(i / 8) * 25, r, { role: 'hero', hue: big ? 0.08 : 0.55 + rng.range(0, 0.15), impacts: false }, { friction: 0.05, restitution: 0.15, density: 0.002 }));
+      const r = big ? 19 : 6.5;
+      beads.push(circle(ctx, 245 + (i % 6) * 38 + rng.range(-2, 2), 130 - Math.floor(i / 6) * 38, r, { role: 'hero', hue: big ? 0.08 : 0.55 + rng.range(0, 0.15), impacts: false }, { friction: big ? 0.05 : 0.6, restitution: big ? 0.15 : 0.05, density: 0.002 }));
     }
     ctx.r.impactsEnabled = false;
     dolly(ctx, 960, 540, 0.98, 1.03);

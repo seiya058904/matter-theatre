@@ -206,7 +206,8 @@ const ringEscape: SceneDef = {
     const speeds = [1.7, -1.35, 1.1, -0.92, 0.8];
     const thick = 12;
     const rings = radii.map((R, i) => {
-      const gap = 78 / R;
+      // A gap a little over three ball-widths wide.
+      const gap = 104 / R;
       const start = Math.PI / 2 + 1.3 + i * 2.35;
       const n = Math.round(((Math.PI * 2 - gap) * R) / 24);
       const seg = ((Math.PI * 2 - gap) * R) / n;
@@ -216,9 +217,10 @@ const ringEscape: SceneDef = {
         parts.push(Bodies.rectangle(C.x + Math.cos(a) * R, C.y + Math.sin(a) * R, seg * 1.06, thick, { angle: a + Math.PI / 2 }));
       }
       const body = Body.create({ parts, isStatic: true });
-      // Hard, frictionless rims: nearly every bounce is elastic.
+      // Frictionless rims with a lively but losing bounce: a ball soon rests in its ring's trough and
+      // drops through the gap as it sweeps past (a near-elastic rim keeps it airborne and trapped).
       for (const p of body.parts) {
-        p.restitution = 0.97;
+        p.restitution = 0.6;
         p.friction = 0;
       }
       r.add(world, body, { role: 'structure', hidden: true });

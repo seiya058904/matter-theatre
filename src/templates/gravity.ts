@@ -128,7 +128,8 @@ const projectileFan: SceneDef = {
       floors: [fl],
       enter: () =>
         balls.forEach((b, i) =>
-          tl.at(tl.t + i * 0.14, () => {
+          // Thrown one after another so the umbrella of parabolas opens over most of the clip.
+          tl.at(tl.t + i * 0.36, () => {
             const a = ((14 + (i * 68) / (n - 1)) * Math.PI) / 180;
             release(b);
             Body.setVelocity(b, { x: Math.cos(a) * speed, y: -Math.sin(a) * speed });
@@ -165,7 +166,7 @@ const trapdoors: SceneDef = {
     shelves.forEach((s, i) => {
       // Cargo spills off the latch end (right), so every shelf can be walled at both ends.
       for (const side of [-1, 1]) staticRect(ctx, s.x + side * (w / 2 + 12), s.y - 80, 14, 140, 'structure');
-      const door = rect(ctx, s.x, s.y, w, 16, { role: 'debris', hue: i / 2 }, { density: 0.003, friction: 0.3 });
+      const door = rect(ctx, s.x, s.y, w, 16, { role: 'debris', hue: i / 2 }, { density: 0.003, friction: 0, frictionStatic: 0 });
       Composite.add(world, Constraint.create({ pointA: { x: s.x - w / 2, y: s.y }, bodyB: door, pointB: { x: -w / 2, y: 0 }, length: 0, stiffness: 1 }));
       // The hinge pin is drawn, not felt: the door turns about the constraint.
       staticCircle(ctx, s.x - w / 2, s.y, 7, 'structure', { collisionFilter: { group: 0, category: 0x0002, mask: 0 } });
@@ -178,9 +179,12 @@ const trapdoors: SceneDef = {
         const x = s.x - w / 2 + 38 + (k % 5) * 66 + rng.range(-3, 3);
         const y = s.y - 36 - Math.floor(k / 5) * 52;
         const view = { role: 'hero' as const, hue: (i * 0.33 + k * 0.03) % 1 };
-        if (k % 3 === 0) ball(ctx, x, y, 22, view, { friction: 0.3, restitution: 0.15 });
-        else if (k % 3 === 1) rect(ctx, x, y, 40, 40, view, { friction: 0.4, restitution: 0.1 });
-        else polygon(ctx, x, y + 4, 3, 26, view, { friction: 0.4, restitution: 0.1 });
+        // An open door comes to rest on the shelf below at only about 19°. Matter's friction impulse is
+        // warm-started across steps, so on so shallow a slope any friction at all holds cargo still: the
+        // door's face is slick (friction 0) and the cargo slides off it.
+        if (k % 3 === 0) ball(ctx, x, y, 22, view, { friction: 0.2, restitution: 0.15 });
+        else if (k % 3 === 1) rect(ctx, x, y, 40, 40, view, { friction: 0.22, restitution: 0.1 });
+        else polygon(ctx, x, y + 4, 3, 26, view, { friction: 0.22, restitution: 0.1 });
       }
     });
     const basin = [...wallPath(ctx, [{ x: 770, y: 930 }, { x: 800, y: 1000 }, { x: 1420, y: 1000 }, { x: 1450, y: 930 }], 18), ground(ctx, 1030, 4000), staticRect(ctx, 250, 900, 20, 260, 'structure'), staticRect(ctx, 1700, 900, 20, 260, 'structure')];

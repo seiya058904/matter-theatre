@@ -58,7 +58,7 @@ const rolyPoly: SceneDef = {
     const { world, r, tl } = ctx;
     const gy = 880;
     ground(ctx, gy, 4000);
-    staticRect(ctx, 200, gy - 140, 420, 16, 'structure', 0.35);
+    staticRect(ctx, 330, gy - 150, 440, 16, 'structure', 0.38);
     const toys: MBody[] = [];
     for (let i = 0; i < 4; i++) {
       const x = 760 + i * 260;
@@ -68,7 +68,7 @@ const rolyPoly: SceneDef = {
       r.add(world, toy, { role: 'hero', hue: i / 3, weight: 1 });
       toys.push(toy);
     }
-    const balls = [0, 1, 2].map((i) => ball(ctx, 60 + i * 52, gy - 260 - i * 20, 24, { role: 'accent', trail: 1.5, weight: 1 }, { isStatic: true, density: 0.004, restitution: 0.3 }));
+    const balls = [0, 1, 2].map((i) => ball(ctx, 170 + i * 66, gy - 290 - i * 26, 30, { role: 'accent', trail: 1.5, weight: 1 }, { isStatic: true, density: 0.016, restitution: 0.3 }));
     dolly(ctx, 1000, 700, 1.05, 1.0);
     return { entry: { x: 1000, y: gy - 120 }, enter: () => balls.forEach((b, i) => tl.at(tl.t + i * 1.2, () => release(b))), dispose: () => void toys };
   },
@@ -99,7 +99,8 @@ const pyramid: SceneDef = {
     wallPath(ctx, [{ x: 40, y: 180 }, { x: 520, y: 700 }, { x: 600, y: 745 }, { x: 680, y: 735 }, { x: 740, y: 705 }], 20, 'structure', { friction: 0.02 });
     const wreck = ball(ctx, 90, 160, 42, { role: 'accent', trail: 1.6, weight: 1 }, { density: 0.02, friction: 0.3, restitution: 0.1, isStatic: true });
     ctx.r.impactMin = 4;
-    dolly(ctx, 860, 600, 0.96, 1.0);
+    // Wide enough for the ramp's head and the far reach of the rubble.
+    dolly(ctx, 900, 600, 0.95, 0.97, 960, 600);
     return { entry: { x: x0, y: gy - 200 }, floors: [fl], enter: () => release(wreck) };
   },
 };

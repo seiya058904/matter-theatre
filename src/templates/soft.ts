@@ -70,17 +70,23 @@ const jellyRain: SceneDef = {
     wallPath(ctx, bowlOf(cx), 22, 'structure', { friction: 0.6 });
     ctx.r.impactMin = 4;
     // Two jellies already lie at the bottom of the bowl, set down where they come to rest.
-    softBody(ctx, cx - 60, 896, 84, { hue: 0.1 }, { hz: 6, damping: 0.22 });
-    softBody(ctx, cx + 100, 888, 70, { hue: 0.3 }, { hz: 6, damping: 0.22 });
+    // (Centres sit one radius above the bowl's inner face: a skin node outside the wall would fall through it.)
+    softBody(ctx, cx - 140, 832, 84, { hue: 0.1 }, { hz: 10, inflate: 0.3, damping: 0.22 });
+    softBody(ctx, cx + 160, 840, 70, { hue: 0.3 }, { hz: 10, inflate: 0.3, damping: 0.22 });
     const held: Soft[] = [];
+    // Held above the frame in three columns and three rows, clear of one another: a jelly let go must
+    // never come to rest on one still held.
+    const col = [-250, 250, 0, -250, 250, 0, 0];
+    const row = [0, 0, 0, 1, 1, 1, 2];
     for (let k = 0; k < 7; k++) {
       const R = k === 6 ? 118 : rng.range(52, 86);
-      held.push(softBody(ctx, cx + (k === 6 ? 0 : rng.range(-260, 260)), -160 - k * 10, R, { hue: (0.5 + k * 0.17) % 1 }, { hz: k === 6 ? 5 : 6.5, held: true }));
+      const x = cx + col[k] + (k === 6 ? 0 : rng.range(-40, 40));
+      held.push(softBody(ctx, x, -R - 60 - row[k] * 260, R, { hue: (0.5 + k * 0.17) % 1 }, { hz: k === 6 ? 8.5 : 10, inflate: 0.3, air: 0.006, damping: 0.14, held: true }));
     }
     dolly(ctx, cx, 580, 0.96, 0.9, cx, 540);
     return {
       entry: { x: cx, y: 620 },
-      enter: () => held.forEach((s, k) => tl.at(tl.t + k * 0.85 + (k === 6 ? 0.7 : 0), () => release(...s.nodes))),
+      enter: () => held.forEach((s, k) => tl.at(tl.t + k * 0.7 + (k === 6 ? 0.5 : 0), () => release(...s.nodes))),
     };
   },
 };
@@ -101,14 +107,14 @@ const jellySteps: SceneDef = {
   setup(ctx) {
     const steps: MBody[] = [];
     steps.push(staticRect(ctx, 300, 330, 560, 24, 'structure', 0.16, { friction: 0.2 }));
-    for (let i = 1; i < 6; i++) steps.push(staticRect(ctx, 520 + i * 200 - (i === 1 ? 40 : 0), 370 + i * 110, 230 + (i === 1 ? 80 : 0), 26, 'structure', 0, { friction: 0.6 }));
+    for (let i = 1; i < 6; i++) steps.push(staticRect(ctx, 520 + i * 200 - (i === 1 ? 40 : 0), 370 + i * 110, 230 + (i === 1 ? 80 : 0), 26, 'structure', 0.09, { friction: 0.35 }));
     steps.push(staticRect(ctx, 960, 1070, 2400, 40, 'ground'));
     steps.push(staticRect(ctx, 1650, 1000, 600, 26, 'ground'));
     staticRect(ctx, 20, 240, 20, 260, 'structure');
     staticRect(ctx, 1900, 880, 24, 260, 'structure');
-    softBody(ctx, 470, 288, 52, { hue: 0.05 }, { hz: 7, damping: 0.18 });
-    softBody(ctx, 345, 272, 48, { hue: 0.4 }, { hz: 7, damping: 0.18 });
-    softBody(ctx, 220, 254, 44, { hue: 0.75 }, { hz: 7, damping: 0.18 });
+    softBody(ctx, 468, 280, 60, { hue: 0.05 }, { hz: 9, inflate: 0.3, damping: 0.14 });
+    softBody(ctx, 344, 262, 56, { hue: 0.4 }, { hz: 9, inflate: 0.3, damping: 0.14 });
+    softBody(ctx, 228, 246, 50, { hue: 0.75 }, { hz: 9, inflate: 0.3, damping: 0.14 });
     // A gate at the lip of the shelf holds them until the template begins.
     const stopper = staticRect(ctx, 590, 290, 16, 140, 'accent');
     dolly(ctx, 1000, 600, 0.92, 0.98, 1100, 640);

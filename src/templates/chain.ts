@@ -32,7 +32,7 @@ const dominoGrowth: SceneDef = {
     const doms: MBody[] = [];
     for (let i = 0; i < n; i++) {
       doms.push(domino(ctx, x, gy, Math.max(10, h * 0.16), h, { role: 'hero', hue: i / (n - 1) }));
-      x += h * 0.56;
+      x += h * 0.5;
       h *= 1.07;
     }
     const last = doms[n - 1];
@@ -41,8 +41,8 @@ const dominoGrowth: SceneDef = {
     pin(ctx, bell, bellX, gy - 460, { length: 320 }, 'structure', 2);
     staticRect(ctx, bellX, gy - 470, 160, 14, 'structure');
     staticRect(ctx, 150, gy - 120, 260, 14, 'structure', 0.42, { friction: 0.02 });
-    const starter = ball(ctx, 60, gy - 200, 16, { role: 'accent', trail: 1.5, weight: 1 }, { isStatic: true, density: 0.004, friction: 0.02 });
-    dolly(ctx, 960, 640, 1.05, 0.98, 1000, 620);
+    const starter = ball(ctx, 60, gy - 200, 16, { role: 'accent', trail: 1.5, weight: 1 }, { isStatic: true, density: 0.003, friction: 0.02 });
+    dolly(ctx, 960, 640, 1.02, 0.97, 1000, 620);
     return { entry: { x: 300, y: gy - 60 }, floors: [fl], enter: () => release(starter) };
   },
 };
@@ -83,8 +83,9 @@ const dominoStairs: SceneDef = {
     staticRect(ctx, x0 + 200, y + 10, 520, 20, 'structure');
     ball(ctx, x0 - 20, y - 16, 16, { role: 'accent', trail: 1.5, weight: 1 }, { density: 0.002, friction: 0.05, restitution: 0.3 });
     staticRect(ctx, 180, 260, 220, 14, 'structure', 0.38, { friction: 0.02 });
-    const starter = ball(ctx, 90, 210, 15, { role: 'accent', trail: 1.5, weight: 1 }, { isStatic: true, density: 0.004, friction: 0.02 });
-    dolly(ctx, 930, 430, 1.12, 1.18, 990, 450);
+    const starter = ball(ctx, 90, 210, 15, { role: 'accent', trail: 1.5, weight: 1 }, { isStatic: true, density: 0.003, friction: 0.02 });
+    // The staircase is a long, shallow band: framed through its middle, end to end.
+    dolly(ctx, 950, 380, 1.04, 1.08, 1000, 390);
     return { entry: { x: 330, y: 300 }, enter: () => release(starter) };
   },
 };
@@ -95,7 +96,7 @@ const seesawToss: SceneDef = {
   theme: 'chain',
   title: { zh: '跷跷板投篮', en: 'Seesaw Toss' },
   law: { zh: '杠杆与动量传递', en: 'Lever and momentum' },
-  blurb: { zh: '重球沿坡滚下砸在跷跷板高的一端，另一端的轻球被高高抛起，划出弧线。', en: 'A heavy ball drops onto the high end of a seesaw and lobs a light ball high across the stage.' },
+  blurb: { zh: '重球沿坡滚下砸在跷跷板高的一端，另一端的轻球被高高抛起，越过支点划出弧线，落进篮筐。', en: 'A heavy ball drops onto the high end of a seesaw and lobs a light ball high back over the pivot into a basket.' },
   duration: 11,
   energy: 4,
   endState: 'settle',
@@ -112,11 +113,12 @@ const seesawToss: SceneDef = {
     rotateAbout(plank, 0.26, pivot);
     const lp = Matter.Vector.add(pivot, Matter.Vector.rotate({ x: 222, y: -29 }, 0.26));
     const light = ball(ctx, lp.x, lp.y, 20, { role: 'hero', hue: 0.1, trail: 4, weight: 1 }, { density: 0.0008, restitution: 0.3, friction: 0.5 });
-    wallPath(ctx, [{ x: 120, y: 260 }, { x: 420, y: 430 }, { x: 520, y: 450 }], 16, 'structure', { friction: 0.01 });
-    const heavy = ball(ctx, 140, 220, 32, { role: 'accent', trail: 1.5, weight: 1 }, { isStatic: true, density: 0.012, friction: 0.02 });
-    // A basket to catch the light ball.
-    wallPath(ctx, [{ x: 1300, y: 600 }, { x: 1320, y: 740 }, { x: 1460, y: 740 }, { x: 1480, y: 600 }], 12);
-    staticRect(ctx, 1390, 840, 16, 200, 'structure');
+    // The ramp's lip sits far enough back that the heavy ball's arc lands it on the seesaw's high end.
+    wallPath(ctx, [{ x: 40, y: 250 }, { x: 250, y: 370 }, { x: 310, y: 380 }], 16, 'structure', { friction: 0.01 });
+    const heavy = ball(ctx, 60, 210, 32, { role: 'accent', trail: 1.5, weight: 1 }, { isStatic: true, density: 0.003, friction: 0.02 });
+    // A seesaw throws back over its pivot: the light ball arcs up and to the left, and the basket stands
+    // where that arc comes down.
+    wallPath(ctx, [{ x: 150, y: 790 }, { x: 166, y: 928 }, { x: 334, y: 928 }, { x: 350, y: 790 }], 12);
     staticRect(ctx, 1880, 860, 20, 160, 'structure');
     void light;
     dolly(ctx, 960, 560, 0.94, 0.98);

@@ -223,6 +223,16 @@ public/
   thumbs/<look>/<template>.jpg   315 pre-rendered library thumbnails
 ```
 
+### Tests
+
+`npm test` runs the headless suites: library shape, per-template health (no NaNs, nothing lost out of shot, a calm start, something visibly happens, bit-for-bit determinism) and **outcomes** (`tests/outcomes.test.ts`: each story's payload really arrives — the shelves empty, the sieve sorts, the toss lands in its basket). `REVIEW=1 npx vitest run tests/zz-review.test.ts --reporter=verbose` prints an on-demand watchability report (wake-up time, peak, tail, framing).
+
+### Authoring Notes (Matter.js)
+
+- **Friction sticks on shallow slopes.** Matter warm-starts its friction impulse across steps, so at our 120 Hz step any non-zero pair friction (`min` of the two bodies) holds a body still on slopes up to ~20°, and stiction uses the *larger* `frictionStatic`. Something meant to slide off a gentle incline needs a surface with `friction: 0`; balls roll regardless.
+- **Spawn clear of walls.** A soft body's skin node placed outside a wall falls through it; held bodies must not overlap each other, or a released one comes to rest on one still held.
+- **Static bodies report friction 1** while held (`Body.setStatic`), and get their own value back when released.
+
 ### Thumbnails
 
 Library thumbnails are pre-rendered into `public/thumbs/` so browsing in Compose never spins up a simulation. After adding or editing a template, regenerate them following [`docs/thumbnails.md`](docs/thumbnails.md). Missing files fall back to idle-time rendering.

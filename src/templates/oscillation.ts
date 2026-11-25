@@ -233,7 +233,7 @@ const standingWave: SceneDef = {
   gravity: { x: 0, y: 0 },
   setup(ctx) {
     const { r, tl } = ctx;
-    const T = tuned('standing-wave', { amp: 34, air: 0.003, hold: 3.1 });
+    const T = tuned('standing-wave', { amp: 46, air: 0.003, hold: 3.1 });
     const n = 40;
     const x0 = 250;
     const x1 = 1670;

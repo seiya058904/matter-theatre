@@ -33,7 +33,7 @@ const bridge: SceneDef = {
     pin(ctx, planks[n - 1], right.x, right.y, { pointB: { x: pw / 2 - 2, y: 0 }, length: 2 }, false);
     r.link(() => [left, ...planks.map((p) => r.ipos(p)), right], 'structure', 2);
     const balls = [0, 1, 2].map((i) => ball(ctx, 60 + i * 50, 270 - i * 20, 26 - i * 3, { role: 'hero', hue: 0.15 + i * 0.3, trail: 1.5, weight: 1 }, { isStatic: true, density: 0.003, friction: 0.6, restitution: 0.2 }));
-    dolly(ctx, W / 2, 520, 0.98, 1.04);
+    dolly(ctx, 940, 520, 0.97, 1.0, 960, 530);
     return { entry: { x: W / 2, y: left.y }, enter: () => balls.forEach((b, i) => tl.at(tl.t + i * 1.6, () => release(b))) };
   },
 };
@@ -57,10 +57,11 @@ const chainSlide: SceneDef = {
     staticCircle(ctx, 1248, shelfY + 12, 12, 'structure', slick);
     const fl = ground(ctx, 980, 5000);
     wallPath(ctx, [{ x: 1150, y: 760 }, { x: 1180, y: 965 }, { x: 1500, y: 965 }, { x: 1530, y: 760 }], 14);
-    // 44 links laid along the shelf; the last seven already hang over the rounded edge.
+    // 44 links laid along the shelf; only the last three hang over the rounded edge, so the chain creeps
+    // off slowly at first and then whips away.
     const n = 44;
     const seg = 21.4;
-    const corner = 37;
+    const corner = 41;
     const x0 = 1252 - corner * seg;
     const links = rope(ctx, { x: x0, y: shelfY - 7 }, { x: x0 + n * seg, y: shelfY - 7 }, n, { r: 7, pinA: false, density: 0.004, width: 5, role: 'hero', hue: 0.3 });
     for (let i = corner + 1; i <= n; i++) Body.setPosition(links[i], { x: 1268, y: shelfY - 7 + (i - corner) * seg });
@@ -99,7 +100,7 @@ const curtain: SceneDef = {
     const ang = -0.85;
     const bob = ball(ctx, pivot.x + Math.sin(ang) * len, pivot.y + Math.cos(ang) * len, 40, { role: 'accent', trail: 1.6, weight: 1 }, { isStatic: true, density: 0.006, frictionAir: 0.0005 });
     pin(ctx, bob, pivot.x, pivot.y, { length: len }, 'structure', 2);
-    dolly(ctx, W / 2, 480, 1.0, 1.06);
+    dolly(ctx, W / 2, 430, 1.1, 1.15);
     return { entry: { x: 980, y: 420 }, enter: () => release(bob) };
   },
 };

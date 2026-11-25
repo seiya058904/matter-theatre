@@ -98,11 +98,12 @@ const cargoBoat: SceneDef = {
     staticRect(ctx, W / 2, 1320, W + 1200, 40, 'ground');
     // Crates hang from the gantry in two rows, dropped one at a time: three on the lower row, then two above.
     const specs = [
-      { w: 80, dx: 0, y: 440, rel: 1.6, hue: 0.1 },
-      { w: 76, dx: -112, y: 440, rel: 1.2, hue: 0.32 },
-      { w: 76, dx: 112, y: 440, rel: 1.2, hue: 0.12 },
+      // Wooden crates (lighter than water, rel < 1) and one iron block that does the sinking.
+      { w: 80, dx: 0, y: 440, rel: 0.9, hue: 0.1 },
+      { w: 76, dx: -112, y: 440, rel: 0.8, hue: 0.32 },
+      { w: 76, dx: 112, y: 440, rel: 0.8, hue: 0.12 },
       { w: 64, dx: -56, y: 300, rel: 0.6, hue: 0.36 },
-      { w: 112, dx: 60, y: 280, rel: 4.2, hue: 0.9 },
+      { w: 112, dx: 60, y: 280, rel: 5.2, hue: 0.9 },
     ];
     const crates = specs.map((s, i) => rect(ctx, cx + s.dx, s.y, s.w, s.w, { role: i === 4 ? 'accent' : 'hero', hue: s.hue, weight: 1 }, { isStatic: true, density: 0.002 * s.rel, friction: 0.7, restitution: 0.05 }));
     ctx.r.drawBack((g) => {
