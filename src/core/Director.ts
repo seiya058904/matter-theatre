@@ -708,8 +708,16 @@ export class Director {
           B.root.filters = [this.ink];
           B.root.filterArea = area;
         }
-        // The old scene washes out as the ink spreads, so it never shows through the new one's paper.
-        A.root.alpha = 1 - smooth(clamp(p * 1.7 - 0.2));
+        // The old scene washes out as the ink spreads, gone just as the front (INK_FRAG: 2.1p − 0.15,
+        // plus its ragged edge) reaches the frame's farthest corner — never earlier, which would leave
+        // bare paper, and not much later, which would show it through the new scene.
+        const ox = (local.x - area.x) / area.width;
+        const oy = (local.y - area.y) / area.height;
+        const asp = area.width / area.height;
+        let far = 0;
+        for (const [cx, cy] of [[0, 0], [W, 0], [0, H], [W, H]]) far = Math.max(far, Math.hypot(((cx - area.x) / area.width - ox) * asp, (cy - area.y) / area.height - oy));
+        const full = clamp((far + 0.2 + 0.27) / 2.1, 0.5, 1);
+        A.root.alpha = 1 - smooth(clamp((p - 0.15) / (full - 0.15)));
         break;
       }
     }

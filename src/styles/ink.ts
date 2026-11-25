@@ -58,7 +58,7 @@ export const ink: StyleDef = {
     const role = look.role;
     const base = role === 'hero' ? 0.78 : role === 'accent' ? 0.92 : role === 'debris' ? 0.55 : role === 'ground' ? 0.85 : 0.22;
     const loaded = role === 'hero' || role === 'debris';
-    // Five shades of ink: each piece is laid with a wetter or drier brush.
+    // Shades of ink: each piece is laid with a wetter or drier brush (the body cache keeps a few tones).
     const density = loaded ? Math.min(0.95, base * (0.7 + 0.5 * srand(look.seed, 3))) : base;
     // Wet ink bleeds a little into the paper around the stroke.
     if (loaded || role === 'accent') fillShapes(g, shapes.map((s) => scaleShape(s, 1 + 3 / Math.max(6, sizeOf(s)))), c, 0.1);

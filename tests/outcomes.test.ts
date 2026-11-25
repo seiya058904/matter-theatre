@@ -2,7 +2,7 @@ import Matter from 'matter-js';
 import { describe, expect, it } from 'vitest';
 import { buildSim, createEngine, settleAll, stepSim } from '../src/core/sim';
 import { STEP } from '../src/core/types';
-import { OVERLAP } from '../src/show/ShowConfig';
+import { LEN_SCALE, OVERLAP } from '../src/show/ShowConfig';
 import { neon } from '../src/styles/neon';
 import { templateById } from '../src/templates';
 import { stubGpu, stubRenderer } from './stubRenderer';
@@ -12,12 +12,14 @@ import { stubGpu, stubRenderer } from './stubRenderer';
  * its payload ends up where the story says. Guards against the misfires a health check cannot see —
  * cargo that never leaves a shelf, beads jammed on a grate, a toss that misses its basket.
  */
-function finale(id: string): Matter.Body[] {
+function finale(id: string, o: { len?: number; enterAt?: number } = {}): Matter.Body[] {
   const def = templateById(id)!;
+  // A cue can be shortened or lengthened (LEN_SCALE); the first cue and jumps enter early (0.6 s).
+  const duration = def.duration * (o.len ?? 1);
   const engine = createEngine(def);
-  const sim = buildSim(def, engine, stubRenderer(), { style: neon, seed: 7, index: 0, duration: def.duration, enterAt: OVERLAP, renderer: stubGpu });
+  const sim = buildSim(def, engine, stubRenderer(), { style: neon, seed: 7, index: 0, duration, enterAt: o.enterAt ?? OVERLAP, renderer: stubGpu });
   settleAll(sim);
-  const steps = Math.round(def.duration / STEP);
+  const steps = Math.round(duration / STEP);
   for (let k = 0; k < steps; k++) stepSim(sim, k * STEP, STEP);
   return Matter.Composite.allBodies(engine.world).filter((b) => !b.isStatic);
 }
@@ -74,9 +76,24 @@ describe('every payload arrives', () => {
     });
   });
 
-  it('balance-scale: the beam tips, then comes to rest level', () => {
-    const beam = finale('balance-scale').find((b) => b.bounds.max.x - b.bounds.min.x > 700)!;
-    expect(Math.abs(beam.angle)).toBeLessThan(0.03);
+  it('balance-scale: the weights stay in their pans and the beam settles near level', () => {
+    for (const len of LEN_SCALE)
+      for (const enterAt of [0.6, OVERLAP]) {
+        const at = `len ${len}, enter ${enterAt}`;
+        const bs = finale('balance-scale', { len, enterAt });
+        const beam = bs.find((b) => b.bounds.max.x - b.bounds.min.x > 700)!;
+        const weights = bs.filter((b) => b.bounds.max.x - b.bounds.min.x < 80);
+        expect(weights.length, at).toBe(3);
+        // Pans hang at x = 600 and 1320 (beam ends ±360 from the centre); a weight that slid off would
+        // be far below them.
+        for (const w of weights) {
+          expect(Math.min(Math.abs(w.position.x - 600), Math.abs(w.position.x - 1320)), `${at} #${w.id}`).toBeLessThan(80);
+          expect(w.position.y, `${at} #${w.id}`).toBeLessThan(720);
+        }
+        // Clips cut short end while the beam is still swaying gently; full and long ones end near level.
+        expect(Math.abs(beam.angle), at).toBeLessThan(len < 1 ? 0.08 : 0.04);
+        expect(Math.abs(beam.angularVelocity) * 120, `${at} rad/s`).toBeLessThan(0.1);
+      }
   });
 
   it('domino-growth and domino-stairs: every domino falls', () => {

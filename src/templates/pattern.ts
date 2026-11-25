@@ -204,13 +204,15 @@ const ringEscape: SceneDef = {
     engine.gravity.scale = 0.0016;
     const C = { x: W / 2, y: 470 };
     const radii = [112, 178, 244, 310, 376];
-    const speeds = [2.21, -1.755, 1.43, -1.196, 1.04];
+    const speeds = [1.7, -1.35, 1.1, -0.92, 0.8].map((v) => v * 1.3);
     const thick = 12;
     const rings = radii.map((R, i) => {
-      // A gap about four ball-widths wide.
-      const gap = 120 / R;
+      // A gap about six ball-widths wide.
+      const gap = 170 / R;
       // The gaps' starting phases are chosen so that each ring's gap comes round soon after the balls
-      // have settled into it: all five break out around 8 s, leaving time to watch them land.
+      // have settled into it: all five break out around 8 s, leaving time to watch them land. Wide gaps
+      // and a soft rim bounce give the escape a margin: the system is chaotic, and a tuning that only
+      // just worked would lose a ball to float-level differences between machines.
       const start = Math.PI / 2 + 4.71 + i * 3;
       const n = Math.round(((Math.PI * 2 - gap) * R) / 24);
       const seg = ((Math.PI * 2 - gap) * R) / n;
@@ -223,7 +225,7 @@ const ringEscape: SceneDef = {
       // Frictionless rims with a lively but losing bounce: a ball soon rests in its ring's trough and
       // drops through the gap as it sweeps past (a near-elastic rim keeps it airborne and trapped).
       for (const p of body.parts) {
-        p.restitution = 0.6;
+        p.restitution = 0.4;
         p.friction = 0;
       }
       r.add(world, body, { role: 'structure', hidden: true });

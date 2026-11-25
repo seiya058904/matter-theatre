@@ -54,12 +54,15 @@ creators who compose and export.
 - [x] Trail-driven templates checked live (Playwright, real rendering): all read correctly. The
       double-pendulum "straight chords" were a snapshot artefact; stadium-billiards' straight chords are
       the physics.
-- [x] ring-escape: all 5 balls out by ~8.4 s of 14 (gap phases, width and ring speeds retuned).
+- [x] ring-escape: all 5 balls out by ~8.4 s of 14 (gap phases, width, ring speeds and rim bounce
+      retuned). The system is chaotic: the tuning was chosen for margin (all 5 out in 99/99 runs with
+      start positions nudged by up to 1e-4 px), not just for one run that happens to work.
 - [x] bounce-ladder: lower gravity and a smaller toss; the lively balls still arc at the end, none leave frame.
 - [x] Small subjects reframed: newton-cradle, balance-scale, cam-wave.
 - [x] Mass/material pass: rope-cut's light links stretched under the heavy balls (none reached its cup) —
       now an inextensible string carries each ball; balance-scale was still swinging at the end — now
-      tips, sways and settles level. Rope and soft families reviewed live, no other defects found.
+      tips, sways and settles near level (within ~0.04 rad); its weights land centred, since an
+      off-centre one tilted the hanging pan and crept off it on long cues. Rope and soft families reviewed live, no other defects found.
 - [x] `outcomes.test.ts`: rope-cut, balance-scale, domino-growth, domino-stairs, chain-slide added;
       ring-escape tightened to all 5 balls.
 
@@ -72,8 +75,8 @@ creators who compose and export.
       caustic backdrop dimmed for a darker mood.
 - [x] Cartoon: already met the brief (outlines, flat fills, squash) — unchanged.
 - [x] Impact feedback weighed by the pair's reduced mass (impulse, not just speed); render only.
-- [x] Segues: floor drop no longer double-exposes for ~1 s and lands with an ease-out; ink bleed washes
-      the old scene out as the ink spreads.
+- [x] Segues: floor drop no longer double-exposes for ~1 s and lands with an ease-out; ink bleed fades
+      the old scene out just as the ink front reaches the frame's farthest corner.
 
 Not done (judged unnecessary): new particle kinds or per-look trail changes — live review found them
 fitting already.
@@ -129,3 +132,11 @@ Not verified: real fullscreen (F) — headless browsers cannot enter it.
   unchanged).
 - **2026-11-25 · P3** — Responsive Compose/watch bar fixes for narrow, phone and portrait windows;
   full core-flow check in a real browser.
+- **2026-11-25 · Audit fixes** — An independent audit found two real defects in P1. balance-scale: the
+  heavy weight landed off-centre, crept off its pan on 1.25× cues and the beam flipped (the old test
+  passed only because the beam happened to swing through level at t = 11); weights now land centred
+  and the test covers every cue length and both entry times, checking weights stay in their pans and
+  the beam is near level and slow. ring-escape: "all 5 out" sat on a chaotic edge (a 1e-10 nudge lost a
+  ball in ~1 of 4 runs); wider gaps and a softer rim give a margin. Also tied the ink-bleed fade to the
+  ink front. Lesson: an outcome test must check the state is stable (and run at every cue length), not
+  sample one instant.

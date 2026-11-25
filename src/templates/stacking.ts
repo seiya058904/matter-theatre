@@ -33,10 +33,11 @@ const balance: SceneDef = {
     };
     pan(-1);
     pan(1);
+    // Each load lands centred on its pan: an off-centre weight tilts the hanging pan and creeps off it.
     const weights = [
-      rect(ctx, cx - 370, py + 200, 70, 50, { role: 'hero', hue: 0.1, weight: 1 }, { isStatic: true, density: 0.004, friction: 0.9, restitution: 0 }),
-      rect(ctx, cx + 330, py + 200, 50, 50, { role: 'hero', hue: 0.6, weight: 1 }, { isStatic: true, density: 0.0028, friction: 0.9, restitution: 0 }),
-      rect(ctx, cx + 395, py + 200, 50, 50, { role: 'hero', hue: 0.7, weight: 1 }, { isStatic: true, density: 0.0028, friction: 0.9, restitution: 0 }),
+      rect(ctx, cx - 360, py + 200, 70, 50, { role: 'hero', hue: 0.1, weight: 1 }, { isStatic: true, density: 0.004, friction: 0.9, restitution: 0 }),
+      rect(ctx, cx + 327.5, py + 200, 50, 50, { role: 'hero', hue: 0.6, weight: 1 }, { isStatic: true, density: 0.0028, friction: 0.9, restitution: 0 }),
+      rect(ctx, cx + 392.5, py + 200, 50, 50, { role: 'hero', hue: 0.7, weight: 1 }, { isStatic: true, density: 0.0028, friction: 0.9, restitution: 0 }),
     ];
     void world;
     void r;
