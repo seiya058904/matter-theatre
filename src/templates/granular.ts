@@ -60,7 +60,7 @@ const hourglass: SceneDef = {
   duration: 13,
   energy: 2,
   endState: 'flow',
-  presettle: 2.5,
+  presettle: 4,
   setup(ctx) {
     const { camera, tl, rng } = ctx;
     const C = { x: W / 2, y: 540 };
@@ -204,7 +204,7 @@ const drum: SceneDef = {
   duration: 12,
   energy: 2,
   endState: 'periodic',
-  presettle: 6,
+  presettle: 3,
   setup(ctx) {
     const { world, r, rng } = ctx;
     const cx = W / 2;
@@ -222,10 +222,17 @@ const drum: SceneDef = {
     }
     const shell = Body.create({ parts, isStatic: true, friction: 0.8 });
     r.add(world, shell, { role: 'structure', impacts: false });
-    for (let i = 0; i < 120; i++) {
-      const a = rng.range(Math.PI * 0.15, Math.PI * 0.85);
-      const d = rng.range(0, R - 30);
-      circle(ctx, cx + Math.cos(a) * d * 0.95, cy + Math.sin(a) * d * 0.9 + 30, 13, { role: 'hero', hue: i % 2 ? 0.1 : 0.7, impacts: false }, { friction: 0.4, restitution: 0.1, density: 0.002, frictionAir: 0.003 });
+    // Grains packed row by row from just above the bottom lifter (never overlapping, so the pile starts calm),
+    // one colour on each side: the turning drum mixes them.
+    const g = 13;
+    let placed = 0;
+    for (let row = 0; placed < 120; row++) {
+      const y = cy + R - 62 - g - row * g * 1.75;
+      const half = Math.sqrt(Math.max(0, (R - 30) ** 2 - (y - cy) ** 2)) - g - 4;
+      for (let x = cx - half + (row % 2) * g; x <= cx + half && placed < 120; x += g * 2.05) {
+        circle(ctx, x + rng.range(-0.5, 0.5), y, g, { role: 'hero', hue: x < cx ? 0.7 : 0.1, impacts: false }, { friction: 0.4, restitution: 0.1, density: 0.002, frictionAir: 0.003 });
+        placed++;
+      }
     }
     r.impactsEnabled = false;
     let w = 0;
@@ -252,7 +259,7 @@ const sieve: SceneDef = {
   duration: 12,
   energy: 2,
   endState: 'settle',
-  presettle: 2,
+  presettle: 3.5,
   canDrop: true,
   setup(ctx) {
     const { rng, tl } = ctx;

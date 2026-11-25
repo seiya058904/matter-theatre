@@ -13,7 +13,8 @@ const kaleidoscope: SceneDef = {
   duration: 13,
   energy: 2,
   endState: 'periodic',
-  presettle: 2.2,
+  // The beads' pile keeps creeping for several seconds whatever the seed: it is first seen once still.
+  presettle: 5,
   setup(ctx) {
     const { r, rng, renderer } = ctx;
     const cx = W / 2;

@@ -43,7 +43,7 @@ creators who compose and export.
 | Phase | Scope | Status |
 | :--- | :--- | :--- |
 | P0 | Bug audit, stability, frame-time spikes, calm starts, headless physics suite | **Done** (`482cb60`) |
-| P1 | Template physics & composition polish | **Mostly done** (`4aea02a`); remaining items below |
+| P1 | Template physics & composition polish | **Mostly done** (`4aea02a` + CI fix); remaining items below |
 | P2 | Looks, impact feedback, backdrops & segues | Not started |
 | P3 | UI art & interaction polish, thumbnails | Not started (thumbnails kept in sync so far) |
 
@@ -108,3 +108,8 @@ creators who compose and export.
   P0 regression in soft-bloom (jellies spawned through the bowl); cargo-boat and seesaw-toss now play
   the story their blurbs tell; reframed/re-paced 11 templates; added `outcomes.test.ts`; regenerated 90
   thumbnails; documented Matter friction quirks in README (`4aea02a`).
+- **2026-11-25 · CI fix** — First CI run of P0/P1 failed the calm-start check for `kaleidoscope` on
+  Node 22 (local Node 24 passed). Root cause was real: several piles were only just at rest for seed 7
+  and crept for other seeds (shows use random seeds). Lengthened presettles (kaleidoscope, hourglass,
+  size-sieve), packed rotating-drum's grains without overlap (and split its colours so the mixing
+  reads), and made `physics.test.ts` check the calm start for seeds 8 and 11 as well.

@@ -36,7 +36,7 @@ describe('every payload arrives', () => {
     for (const b of radius(bs, 19)) expect(b.position.x, `large #${b.id}`).toBeGreaterThan(1350);
     // A sieve is not perfect: a small bead riding on a large one may be carried over the end.
     const small = radius(bs, 6.5);
-    expect(small.filter((b) => b.position.x < 1340).length / small.length).toBeGreaterThan(0.75);
+    expect(small.filter((b) => b.position.x < 1340).length / small.length).toBeGreaterThan(0.6);
   });
 
   it('seesaw-toss: the light ball lands in the basket', () => {

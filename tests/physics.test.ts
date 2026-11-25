@@ -36,7 +36,12 @@ describe('every template, headless', () => {
       expect(h.nan, 'NaN position').toBe(false);
       expect(h.lost, 'bodies lost out of shot').toBeLessThanOrEqual(OFFSTAGE[def.id] ?? 0);
       // A calm start: nothing visibly drifts before the experiment begins.
-      if (!def.movingStart) expect(h.startDrift, 'calm start').toBeLessThan(4);
+      if (!def.movingStart) {
+        expect(h.startDrift, 'calm start').toBeLessThan(4);
+        // Shows pick random seeds, and float results differ a little between engines: a pile that is only
+        // just at rest for one seed creeps for another. Check the opening for more seeds.
+        for (const seed of [8, 11]) expect(runHeadless(def, { seed, seconds: 0.6 }).startDrift, `calm start, seed ${seed}`).toBeLessThan(4);
+      }
       expect(h.moved, 'something visibly happens').toBeGreaterThan(30);
     }, 30000);
   }
