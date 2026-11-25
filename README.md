@@ -223,6 +223,10 @@ public/
   thumbs/<look>/<template>.jpg   315 pre-rendered library thumbnails
 ```
 
+### Ongoing Work
+
+The current improvement round, its rules, status and next steps live in [`docs/v5-plan.md`](docs/v5-plan.md). Read it before continuing work on the project.
+
 ### Tests
 
 `npm test` runs the headless suites: library shape, per-template health (no NaNs, nothing lost out of shot, a calm start, something visibly happens, bit-for-bit determinism) and **outcomes** (`tests/outcomes.test.ts`: each story's payload really arrives — the shelves empty, the sieve sorts, the toss lands in its basket). `REVIEW=1 npx vitest run tests/zz-review.test.ts --reporter=verbose` prints an on-demand watchability report (wake-up time, peak, tail, framing).
