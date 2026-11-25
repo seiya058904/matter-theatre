@@ -63,7 +63,39 @@ describe('every payload arrives', () => {
     expect(grains.filter((b) => b.position.x > 560).length / grains.length).toBeGreaterThan(0.6);
   });
 
-  it('ring-escape: balls break out of all five rings', () => {
-    expect(radius(finale('ring-escape'), 14).filter((b) => b.position.y > 870).length).toBeGreaterThanOrEqual(2);
+  it('rope-cut: each ball flies into the cup placed for it', () => {
+    // Cups stand where a swing's bottom speed and the drop to the rim say each ball lands.
+    const cups = [751, 1121, 1462];
+    const balls = radius(finale('rope-cut'), 20).sort((a, b) => a.position.x - b.position.x);
+    expect(balls.length).toBe(3);
+    balls.forEach((b, i) => {
+      expect(Math.abs(b.position.x - cups[i]), `ball ${i}`).toBeLessThan(50);
+      expect(b.position.y, `ball ${i}`).toBeGreaterThan(900);
+    });
+  });
+
+  it('balance-scale: the beam tips, then comes to rest level', () => {
+    const beam = finale('balance-scale').find((b) => b.bounds.max.x - b.bounds.min.x > 700)!;
+    expect(Math.abs(beam.angle)).toBeLessThan(0.03);
+  });
+
+  it('domino-growth and domino-stairs: every domino falls', () => {
+    for (const id of ['domino-growth', 'domino-stairs']) {
+      const dominoes = finale(id).filter((b) => !b.circleRadius);
+      expect(dominoes.length, id).toBeGreaterThan(20);
+      for (const b of dominoes) expect(Math.abs(b.angle), `${id} #${b.id}`).toBeGreaterThan(1);
+    }
+  });
+
+  it('chain-slide: the whole chain ends up in the basket', () => {
+    const links = radius(finale('chain-slide'), 7);
+    expect(links.length).toBe(45);
+    for (const b of links) expect(b.position.y, `link #${b.id}`).toBeGreaterThan(900);
+  });
+
+  it('ring-escape: every ball breaks out of all five rings', () => {
+    const balls = radius(finale('ring-escape'), 14);
+    expect(balls.length).toBe(5);
+    for (const b of balls) expect(b.position.y, `ball #${b.id}`).toBeGreaterThan(870);
   });
 }, 120000);

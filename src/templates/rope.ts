@@ -137,14 +137,17 @@ const ropeCut: SceneDef = {
       const links = rope(ctx, { x: s.px, y: py }, { x: bob.position.x, y: bob.position.y }, 12, { r: 3, density: 0.0006, collide: false, width: 2, role: 'structure', air: 0.002 });
       for (const l of links) Body.setStatic(l, true);
       const knot = Constraint.create({ bodyA: links[links.length - 1], bodyB: bob, length: 0, stiffness: 1 });
-      Composite.add(world, knot);
+      // The rope does not stretch: a chain of light links cannot hold a ball hundreds of times its
+      // mass on its own, so the rope's full length also ties the ball straight to the pivot.
+      const string = Constraint.create({ pointA: { x: s.px, y: py }, bodyB: bob, length: s.L, stiffness: 1 });
+      Composite.add(world, [knot, string]);
       // Where it will land: speed at the bottom, then a horizontal throw down to the cup's rim.
       const v = Math.sqrt(2 * g * s.L * (1 - Math.cos(s.a)));
       const t = Math.sqrt((2 * (rim - (py + s.L))) / g);
       const cx = s.px + v * t;
       const cup = wallPath(ctx, [{ x: cx - 62, y: rim }, { x: cx - 50, y: rim + 90 }, { x: cx + 50, y: rim + 90 }, { x: cx + 62, y: rim }], 12, 'structure', { friction: 0.6 });
       cushion(ctx, cup, 0.02);
-      return { ...s, ball: bob, links, knot, cut: false, cup };
+      return { ...s, ball: bob, links, knot, string, cut: false, cup };
     });
     r.drawBack((gr) => {
       gr.roundRect(200, py - 14, 720, 12, 6).fill({ color: ctx.style.structure, alpha: 0.7 });
@@ -167,6 +170,7 @@ const ropeCut: SceneDef = {
           // Snip: at the lowest point the ball is moving exactly horizontally.
           q.cut = true;
           cut(ctx, q.knot);
+          cut(ctx, q.string);
           ctx.style.impact(r.fx, q.ball.position.x, q.ball.position.y - 20, 0.5, ctx.style.accentColor);
         }
       },

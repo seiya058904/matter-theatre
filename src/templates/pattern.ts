@@ -204,12 +204,14 @@ const ringEscape: SceneDef = {
     engine.gravity.scale = 0.0016;
     const C = { x: W / 2, y: 470 };
     const radii = [112, 178, 244, 310, 376];
-    const speeds = [1.7, -1.35, 1.1, -0.92, 0.8];
+    const speeds = [2.21, -1.755, 1.43, -1.196, 1.04];
     const thick = 12;
     const rings = radii.map((R, i) => {
-      // A gap a little over three ball-widths wide.
-      const gap = 104 / R;
-      const start = Math.PI / 2 + 1.3 + i * 2.35;
+      // A gap about four ball-widths wide.
+      const gap = 120 / R;
+      // The gaps' starting phases are chosen so that each ring's gap comes round soon after the balls
+      // have settled into it: all five break out around 8 s, leaving time to watch them land.
+      const start = Math.PI / 2 + 4.71 + i * 3;
       const n = Math.round(((Math.PI * 2 - gap) * R) / 24);
       const seg = ((Math.PI * 2 - gap) * R) / n;
       const parts: MBody[] = [];
@@ -227,7 +229,6 @@ const ringEscape: SceneDef = {
       r.add(world, body, { role: 'structure', hidden: true });
       return { body, R, gap, start, glow: 0, w: speeds[i], look: r.look('hero', i / (radii.length - 1), 1) };
     });
-    // A floor and walls to catch the escapees.
     // A shallow tray catches the escapees.
     const fl = wallPath(ctx, [{ x: 150, y: 880 }, { x: 210, y: 1010 }, { x: 1710, y: 1010 }, { x: 1770, y: 880 }], 16, 'structure', { friction: 0.6 });
     const balls: MBody[] = [];

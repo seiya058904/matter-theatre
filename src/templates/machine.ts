@@ -301,7 +301,7 @@ const camWave: SceneDef = {
     });
     let w = 0;
     let on = false;
-    dolly(ctx, W / 2, 600, 1.0, 1.05);
+    dolly(ctx, W / 2, 570, 1.2, 1.26);
     return {
       entry: { x: W / 2, y: 600 },
       enter: () => (on = true),

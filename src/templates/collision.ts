@@ -44,7 +44,7 @@ const cradle: SceneDef = {
       g.rect(right - 14, pivotY - 10, 8, len + rad + 230).fill({ color: c, alpha: 0.35 });
       g.roundRect(left - 40, pivotY + len + rad + 210, right - left + 80, 16, 6).fill({ color: c, alpha: 0.5 });
     });
-    dolly(ctx, W / 2, 530, 1.0, 1.08);
+    dolly(ctx, W / 2, 565, 1.3, 1.38);
     return { entry: { x: W / 2, y: pivotY + len }, enter: () => release(lifted) };
   },
 };
@@ -196,6 +196,8 @@ const restitution: SceneDef = {
   canDrop: true,
   setup(ctx) {
     const { r } = ctx;
+    // Moon-ish gravity slows every bounce, so the lively balls are still arcing as the clip ends.
+    ctx.engine.gravity.scale = 0.0005;
     const n = 11;
     const gy = 860;
     const fl = ground(ctx, gy, 6000);
@@ -203,7 +205,7 @@ const restitution: SceneDef = {
     const balls: MBody[] = [];
     for (let i = 0; i < n; i++) {
       const e = i / (n - 1);
-      balls.push(circle(ctx, 280 + i * 136, 190, 20, { role: 'hero', hue: e, trail: 3.5, weight: 1 }, { isStatic: true, restitution: e * 0.995, friction: 0, frictionAir: 0, frictionStatic: 0, slop: 0.01 }));
+      balls.push(circle(ctx, 240 + i * 136, 190, 20, { role: 'hero', hue: e, trail: 3.5, weight: 1 }, { isStatic: true, restitution: e * 0.995, friction: 0, frictionAir: 0, frictionStatic: 0, slop: 0.01 }));
     }
     r.impactMin = 3;
     dolly(ctx, W / 2, 540, 1.0, 0.96, W / 2 + 40);
@@ -214,7 +216,7 @@ const restitution: SceneDef = {
         for (const b of balls) {
           release(b);
           // A gentle sideways toss so each bounce draws an arc.
-          Body.setVelocity(b, { x: 0.9, y: 0 });
+          Body.setVelocity(b, { x: 0.4, y: 0 });
         }
       },
     };

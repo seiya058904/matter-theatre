@@ -14,17 +14,18 @@ const balance: SceneDef = {
   endState: 'settle',
   setup(ctx) {
     const { world, r, tl } = ctx;
+    ctx.engine.gravity.scale = 0.002;
     const cx = W / 2;
     const py = 330;
     // The column is scenery: it never touches the beam.
     staticRect(ctx, cx, (py + 990) / 2, 24, 990 - py, 'structure', 0, { collisionFilter: { group: 0, category: 0x0002, mask: 0 } });
     staticRect(ctx, cx, 990, 360, 24, 'ground');
-    const beam = rect(ctx, cx, py + 30, 760, 16, { role: 'debris', hue: 0.5 }, { density: 0.002, frictionAir: 0.006 });
+    const beam = rect(ctx, cx, py + 30, 760, 16, { role: 'debris', hue: 0.5 }, { density: 0.002, frictionAir: 0.02 });
     // The knife-edge sits above the beam's centre of mass, so the balance rights itself.
     pin(ctx, beam, cx, py, { pointB: { x: 0, y: -30 }, length: 0 }, false);
     staticCircle(ctx, cx, py, 9, 'structure');
     const pan = (side: number) => {
-      const p = rect(ctx, cx + side * 360, py + 330, 220, 14, { role: 'structure' }, { density: 0.004, frictionAir: 0.006, friction: 0.9 });
+      const p = rect(ctx, cx + side * 360, py + 330, 220, 14, { role: 'structure' }, { density: 0.004, frictionAir: 0.02, friction: 0.9 });
       const len = Math.hypot(300, 100);
       link(ctx, beam, p, { pointA: { x: side * 360, y: 0 }, pointB: { x: -100, y: 0 }, length: len }, 'structure', 1.2);
       link(ctx, beam, p, { pointA: { x: side * 360, y: 0 }, pointB: { x: 100, y: 0 }, length: len }, 'structure', 1.2);
@@ -39,8 +40,8 @@ const balance: SceneDef = {
     ];
     void world;
     void r;
-    dolly(ctx, cx, 540, 1.04, 1.0);
-    return { entry: { x: cx, y: py }, enter: () => weights.forEach((w, i) => tl.at(tl.t + 0.2 + i * 1.8, () => release(w))) };
+    dolly(ctx, cx, 655, 1.26, 1.2);
+    return { entry: { x: cx, y: py }, enter: () => weights.forEach((w, i) => tl.at(tl.t + 0.2 + i * 1.2, () => release(w))) };
   },
 };
 

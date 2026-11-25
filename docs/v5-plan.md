@@ -43,27 +43,25 @@ creators who compose and export.
 | Phase | Scope | Status |
 | :--- | :--- | :--- |
 | P0 | Bug audit, stability, frame-time spikes, calm starts, headless physics suite | **Done** (`482cb60`) |
-| P1 | Template physics & composition polish | **Mostly done** (`4aea02a` + CI fix); remaining items below |
+| P1 | Template physics & composition polish | **Done** (`4aea02a`, CI fix, P1 finish) |
 | P2 | Looks, impact feedback, backdrops & segues | Not started |
 | P3 | UI art & interaction polish, thumbnails | Not started (thumbnails kept in sync so far) |
 
 ## Next up
 
-### P1 remainder
+### P1 remainder — done
 
-- [ ] **Trail-driven templates, checked live.** Contact sheets (`director.snapshot`) do not draw trails, so
-      these were not reviewed properly: `kepler`, `binary-star`, `three-body`, `stadium-billiards`,
-      `harmonograph`, `bounce-ladder`, `projectile-fan`, `double-pendulum` (its trail looked like a web of
-      straight chords in snapshots; confirm whether that is only a snapshot artefact).
-- [ ] **ring-escape**: about 3 of 5 balls escape by the end; aim for all 5 with the climax before ~80 %
-      of the clip (try ring segment count, thickness, a slight ball radius change).
-- [ ] **bounce-ladder**: action is over by ~4 s of 11 s; consider a fuller second half.
-- [ ] **Small subjects**: `newton-cradle`, `balance-scale`, `cam-wave` occupy a small part of the frame
-      (`REVIEW=1` report flags SMALL); consider a closer camera.
-- [ ] **Mass/material pass per family** (heavy things feel heavy, soft bodies rebound, ropes hang and whip
-      naturally) — not yet done systematically. Watch for Matter's friction quirk (see README
-      "Authoring Notes").
-- [ ] Add an `outcomes.test.ts` case for every template whose story has a checkable end state.
+- [x] Trail-driven templates checked live (Playwright, real rendering): all read correctly. The
+      double-pendulum "straight chords" were a snapshot artefact; stadium-billiards' straight chords are
+      the physics.
+- [x] ring-escape: all 5 balls out by ~8.4 s of 14 (gap phases, width and ring speeds retuned).
+- [x] bounce-ladder: lower gravity and a smaller toss; the lively balls still arc at the end, none leave frame.
+- [x] Small subjects reframed: newton-cradle, balance-scale, cam-wave.
+- [x] Mass/material pass: rope-cut's light links stretched under the heavy balls (none reached its cup) —
+      now an inextensible string carries each ball; balance-scale was still swinging at the end — now
+      tips, sways and settles level. Rope and soft families reviewed live, no other defects found.
+- [x] `outcomes.test.ts`: rope-cut, balance-scale, domino-growth, domino-stairs, chain-slide added;
+      ring-escape tightened to all 5 balls.
 
 ### P2 — Looks, feedback, segues
 
@@ -113,3 +111,7 @@ creators who compose and export.
   and crept for other seeds (shows use random seeds). Lengthened presettles (kaleidoscope, hourglass,
   size-sieve), packed rotating-drum's grains without overlap (and split its colours so the mixing
   reads), and made `physics.test.ts` check the calm start for seeds 8 and 11 as well.
+- **2026-11-25 · P1 finish** — ring-escape all 5 out; bounce-ladder fuller second half; closer cameras
+  for newton-cradle, balance-scale, cam-wave; fixed rope-cut (stretching ropes, balls missed every cup)
+  and balance-scale (never settled); five new outcome tests; regenerated 25 thumbnails. Note: run the
+  Playwright CLI from outside the repo, or it writes `.playwright-cli/` logs into the working tree.
