@@ -62,8 +62,8 @@ void main(){
     float yb = q.y + 0.18 + 0.16 * sin(q.x * 1.7 + t * 0.12) - (n - 0.5) * 0.5;
     float band = exp(-yb * yb * 18.0);
     float curtain = fbm3(vec2(q.x * 9.0 + n * 3.0, t * 0.12));
-    col += uColC * band * (0.25 + 0.75 * curtain) * 0.42;
-    col += mix(uColC, vec3(0.9,0.3,1.0), 0.5) * exp(-pow(yb + 0.12, 2.0) * 30.0) * 0.12 * curtain;
+    col += uColC * band * (0.25 + 0.75 * curtain) * 0.32;
+    col += mix(uColC, vec3(0.9,0.3,1.0), 0.5) * exp(-pow(yb + 0.12, 2.0) * 30.0) * 0.09 * curtain;
     vec2 sp = (p + cam * 0.04) * 150.0; vec2 id = floor(sp); float h = hash(id);
     float star = step(0.987, h) * smoothstep(0.45, 0.0, length(fract(sp) - 0.5)) * (0.55 + 0.45 * sin(t * 1.7 + h * 80.0));
     col += star * 0.9 * (1.0 - uv.y * 0.8);
@@ -131,7 +131,7 @@ void main(){
       w += vec2(sin(w.y * 1.7 + t * 0.35 + fi), cos(w.x * 1.5 - t * 0.3 + fi * 2.0)) * 0.45;
       c += 0.6 / (1.0 + 40.0 * abs(sin(w.x * 1.2) * cos(w.y * 1.1)));
     }
-    col += uColC * c * 0.16 * (1.2 - uv.y);
+    col += uColC * c * 0.12 * (1.2 - uv.y);
   } else if (m == 11) { // Glass: prism spectrum
     col = mix(uColA, uColB, uv.y);
     vec2 q = p + cam * 0.06;

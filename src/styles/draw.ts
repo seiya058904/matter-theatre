@@ -26,6 +26,24 @@ export function scaleShape(s: Shape, k: number): Shape {
   return { ...s, pts: inset(s.pts, k) };
 }
 
+/** Points on the outline facing a direction (radians, screen space), pulled in towards the centre. */
+export function arcOf(pts: Pt[], from: number, to: number, k = 0.8): Pt[] {
+  const c = centroid(pts);
+  const out: Pt[] = [];
+  for (const p of pts) {
+    const a = Math.atan2(p.y - c.y, p.x - c.x);
+    if (a >= from && a <= to) out.push({ x: c.x + (p.x - c.x) * k, y: c.y + (p.y - c.y) * k, a } as Pt & { a: number });
+  }
+  return out.sort((p, q) => (p as Pt & { a: number }).a - (q as Pt & { a: number }).a);
+}
+
+/** Rough size of a shape (radius, or farthest vertex from its centroid). */
+export function sizeOf(s: Shape): number {
+  if (s.kind === 'circle') return s.r;
+  const c = centroid(s.pts);
+  return Math.max(...s.pts.map((p) => Math.hypot(p.x - c.x, p.y - c.y)));
+}
+
 export function jitter(pts: Pt[], amt: number, seed: number): Pt[] {
   return pts.map((p, i) => ({ x: p.x + (srand(seed, i) - 0.5) * amt, y: p.y + (srand(seed, i + 77) - 0.5) * amt }));
 }

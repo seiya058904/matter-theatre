@@ -1,5 +1,5 @@
-import { lighten } from './color';
-import { fillShapes, glow, inset, path, strokeShapes } from './draw';
+import { darken, lighten } from './color';
+import { arcOf, fillShapes, glow, inset, path, scaleShape, sizeOf, strokeShapes, traceShape } from './draw';
 import type { StyleDef } from './types';
 
 export const glass: StyleDef = {
@@ -27,10 +27,23 @@ export const glass: StyleDef = {
     const c = look.color;
     const structural = look.role === 'structure' || look.role === 'ground';
     if (!structural) glow(g, shapes, lighten(c, 0.3), 0.6);
-    fillShapes(g, shapes, c, structural ? 0.12 : 0.24);
-    fillShapes(g, shapes.map((s) => (s.kind === 'circle' ? { ...s, r: s.r * 0.55 } : s.kind === 'poly' ? { ...s, pts: inset(s.pts, 0.55) } : s)), lighten(c, 0.4), structural ? 0.04 : 0.1);
-    strokeShapes(g, shapes, 2, lighten(c, 0.35), structural ? 0.5 : 0.9);
+    // A pale tinted body whose light bends darker towards the rim (the glass's thickness), around a
+    // clearer core.
+    fillShapes(g, shapes, lighten(c, 0.12), structural ? 0.12 : 0.28);
+    if (!structural)
+      for (const s of shapes) {
+        const w = Math.max(1.5, Math.min(9, sizeOf(s) * 0.16));
+        traceShape(g, scaleShape(s, 1 - (w * 0.5) / Math.max(1, sizeOf(s)))).stroke({ width: w, color: darken(c, 0.45), alpha: 0.28, join: 'round' });
+      }
+    fillShapes(g, shapes.map((s) => scaleShape(s, 0.55)), lighten(c, 0.45), structural ? 0.04 : 0.12);
+    // Crisp rim: coloured light on the edge, a hairline of white outside it.
+    strokeShapes(g, shapes, 2, lighten(c, 0.55), structural ? 0.5 : 0.95);
+    if (!structural) strokeShapes(g, shapes.map((s) => scaleShape(s, 1 + 1.6 / Math.max(4, sizeOf(s)))), 0.8, 0xffffff, 0.28);
     for (const s of shapes) {
+      if (s.kind === 'blob' && !structural) {
+        const hi = arcOf(s.pts, -2.6, -1.4, 0.78);
+        if (hi.length > 1) path(g, hi).stroke({ width: Math.max(2, sizeOf(s) * 0.09), color: 0xffffff, alpha: 0.6, cap: 'round', join: 'round' });
+      }
       if (s.kind === 'circle') {
         const x = s.x ?? 0;
         const y = s.y ?? 0;

@@ -682,10 +682,12 @@ export class Director {
       }
       case 'drop': {
         // The floor opened at the cut; the old stage falls away and the new one settles in from above.
+        // The old stage is gone before the new one is solid (no long double exposure), and the new one
+        // comes down quickly and lands softly.
         A.root.position.y = H / 2 + H * 0.18 * Math.pow(p, 1.5);
-        A.root.alpha = 1 - smooth(clamp((p - 0.35) / 0.55));
-        B.root.position.y = H / 2 - H * 0.35 * (1 - e);
-        B.root.alpha = smooth(clamp(p / 0.7));
+        A.root.alpha = 1 - smooth(clamp((p - 0.15) / 0.45));
+        B.root.position.y = H / 2 - H * 0.35 * (1 - easeOutCubic(p));
+        B.root.alpha = smooth(clamp((p - 0.12) / 0.5));
         break;
       }
       case 'iris': {
@@ -706,7 +708,8 @@ export class Director {
           B.root.filters = [this.ink];
           B.root.filterArea = area;
         }
-        A.root.alpha = 1 - smooth(clamp(p * 1.3 - 0.3));
+        // The old scene washes out as the ink spreads, so it never shows through the new one's paper.
+        A.root.alpha = 1 - smooth(clamp(p * 1.7 - 0.2));
         break;
       }
     }

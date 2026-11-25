@@ -640,7 +640,13 @@ export class SceneRenderer {
       this.cooldown.set(b, now + 0.09);
       const col = pair.collision as unknown as { supports: Matter.Vector[]; supportCount?: number };
       const sp = (col.supportCount ?? col.supports.length) > 0 && col.supports[0] ? col.supports[0] : { x: (a.position.x + b.position.x) / 2, y: (a.position.y + b.position.y) / 2 };
-      const s = Math.min(1, (rel - this.impactMin) / this.impactRange);
+      // Feedback follows the impulse, not just the speed: a grain's tick stays quiet, a heavy hit lands
+      // hard. The pair's reduced mass (the free body's own mass against a wall) weighs the speed.
+      const ma = a.isStatic ? Infinity : a.mass;
+      const mb = b.isStatic ? Infinity : b.mass;
+      const mu = ma === Infinity ? mb : mb === Infinity ? ma : (ma * mb) / (ma + mb);
+      const heft = Number.isFinite(mu) && mu > 0 ? Math.max(0.35, Math.min(1.4, 1 + 0.35 * Math.log10(mu / 2.5))) : 1;
+      const s = Math.min(1, (heft * (rel - this.impactMin)) / this.impactRange);
       const hero = va && va.opts.role !== 'ground' && va.opts.role !== 'structure' ? va : vb && vb.opts.role !== 'ground' ? vb : (va ?? vb!);
       if (va) va.flash = Math.max(va.flash, 0.3 + s * 0.6);
       if (vb) vb.flash = Math.max(vb.flash, 0.3 + s * 0.6);

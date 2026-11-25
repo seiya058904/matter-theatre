@@ -1,9 +1,10 @@
 import type { Graphics } from 'pixi.js';
-import { fillShapes, jitter, path, srand, subdivide } from './draw';
+import { centroid, fillShapes, jitter, path, scaleShape, sizeOf, srand, subdivide } from './draw';
 import type { Pt, Shape, StyleDef } from './types';
 import { traceSmooth } from '../render/SceneRenderer';
 
 const SUMI = 0x1b1b1b;
+const PAPER = 0xefe8d9;
 const CINNABAR = 0xb8322a;
 
 function brush(g: Graphics, s: Shape, seed: number, width: number, alpha: number, color: number): void {
@@ -55,8 +56,38 @@ export const ink: StyleDef = {
   drawBody(g, shapes, look) {
     const c = look.color;
     const role = look.role;
-    const density = role === 'hero' ? 0.78 : role === 'accent' ? 0.92 : role === 'debris' ? 0.55 : role === 'ground' ? 0.85 : 0.22;
+    const base = role === 'hero' ? 0.78 : role === 'accent' ? 0.92 : role === 'debris' ? 0.55 : role === 'ground' ? 0.85 : 0.22;
+    const loaded = role === 'hero' || role === 'debris';
+    // Five shades of ink: each piece is laid with a wetter or drier brush.
+    const density = loaded ? Math.min(0.95, base * (0.7 + 0.5 * srand(look.seed, 3))) : base;
+    // Wet ink bleeds a little into the paper around the stroke.
+    if (loaded || role === 'accent') fillShapes(g, shapes.map((s) => scaleShape(s, 1 + 3 / Math.max(6, sizeOf(s)))), c, 0.1);
     fillShapes(g, shapes, c, density);
+    if (loaded)
+      shapes.forEach((s, i) => {
+        // Dry brush (feibai): the paper shows through in streaks along the stroke.
+        if (s.kind !== 'poly' || sizeOf(s) < 14) return;
+        const o = s.pts;
+        const ctr = centroid(o);
+        // The brush travels along the piece's longest edge.
+        let ux = 1, uy = 0, len = 0;
+        for (let k = 0; k < o.length; k++) {
+          const a = o[k], b = o[(k + 1) % o.length];
+          const d = Math.hypot(b.x - a.x, b.y - a.y);
+          if (d > len) [len, ux, uy] = [d, (b.x - a.x) / d, (b.y - a.y) / d];
+        }
+        const thick = Math.min(...o.map((p) => Math.abs((p.x - ctr.x) * -uy + (p.y - ctr.y) * ux))) || sizeOf(s) * 0.3;
+        const span = Math.max(...o.map((p) => Math.abs((p.x - ctr.x) * ux + (p.y - ctr.y) * uy)));
+        for (let k = 0; k < 2; k++) {
+          const off = (srand(look.seed + i, k + 17) - 0.5) * 1.4 * thick;
+          const l0 = -span * (0.55 + 0.3 * srand(look.seed + i, k + 5));
+          const l1 = span * (0.35 + 0.45 * srand(look.seed + i, k + 11));
+          path(g, [
+            { x: ctr.x + ux * l0 - uy * off, y: ctr.y + uy * l0 + ux * off },
+            { x: ctr.x + ux * l1 - uy * off, y: ctr.y + uy * l1 + ux * off },
+          ]).stroke({ width: 1 + srand(look.seed + i, k + 23) * 1.2, color: PAPER, alpha: 0.2, cap: 'round' });
+        }
+      });
     shapes.forEach((s, i) => {
       brush(g, s, look.seed + i * 0.17, role === 'structure' ? 2.2 : 3, 0.9, role === 'accent' ? c : SUMI);
       if (role !== 'ground' && s.kind !== 'circle' && s.kind !== 'blob') brush(g, s, look.seed + 0.5 + i, 1, 0.35, SUMI);

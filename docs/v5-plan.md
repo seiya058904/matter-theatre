@@ -44,7 +44,7 @@ creators who compose and export.
 | :--- | :--- | :--- |
 | P0 | Bug audit, stability, frame-time spikes, calm starts, headless physics suite | **Done** (`482cb60`) |
 | P1 | Template physics & composition polish | **Done** (`4aea02a`, CI fix, P1 finish) |
-| P2 | Looks, impact feedback, backdrops & segues | Not started |
+| P2 | Looks, impact feedback, backdrops & segues | **Done** (P2 commit) |
 | P3 | UI art & interaction polish, thumbnails | Not started (thumbnails kept in sync so far) |
 
 ## Next up
@@ -63,17 +63,20 @@ creators who compose and export.
 - [x] `outcomes.test.ts`: rope-cut, balance-scale, domino-growth, domino-stairs, chain-slide added;
       ring-escape tightened to all 5 balls.
 
-### P2 — Looks, feedback, segues
+### P2 — Looks, feedback, segues — done
 
-- [ ] Neon: layered glow without blown-out highlights.
-- [ ] Paper: thicker multi-layer cut paper, fibre texture, soft drop shadows.
-- [ ] Ink: wet/dry ink tones, dry-brush strokes, rice-paper white space.
-- [ ] Glass: refraction layers, rim highlights, dark caustic mood.
-- [ ] Cartoon: clean heavy outlines, bright flat fills, squash-and-stretch life.
-- [ ] Impact feedback scaled by impulse (light touch restrained, heavy hit punchy), particles and
-      trails matched to each look and never hiding the subject.
-- [ ] Backdrops (2 per look) recede to support the foreground.
-- [ ] Segue curves and edges, especially **floor drop** and **ink bleed**.
+- [x] Neon: checked live in dense scenes (galton) — no blow-out; aurora backdrop pulled back.
+- [x] Paper: each piece sits on a darker card layer, hero pieces carry a second glued layer, card fibres.
+- [x] Ink: per-piece wet/dry tone, a faint wet bleed, dry-brush (feibai) streaks along each stroke.
+- [x] Glass: refraction band inside the rim, crisper rim and hairline, highlights on soft blobs too;
+      caustic backdrop dimmed for a darker mood.
+- [x] Cartoon: already met the brief (outlines, flat fills, squash) — unchanged.
+- [x] Impact feedback weighed by the pair's reduced mass (impulse, not just speed); render only.
+- [x] Segues: floor drop no longer double-exposes for ~1 s and lands with an ease-out; ink bleed washes
+      the old scene out as the ink spreads.
+
+Not done (judged unnecessary): new particle kinds or per-look trail changes — live review found them
+fitting already.
 
 ### P3 — UI & interaction
 
@@ -115,3 +118,6 @@ creators who compose and export.
   for newton-cradle, balance-scale, cam-wave; fixed rope-cut (stretching ropes, balls missed every cup)
   and balance-scale (never settled); five new outcome tests; regenerated 25 thumbnails. Note: run the
   Playwright CLI from outside the repo, or it writes `.playwright-cli/` logs into the working tree.
+- **2026-11-25 · P2** — Paper/ink/glass body rendering refined, impact feedback by impulse, dimmer
+  neon/glass backdrops, cleaner floor-drop and ink-bleed segues; regenerated 252 thumbnails (cartoon
+  unchanged).
