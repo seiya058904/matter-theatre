@@ -1,9 +1,9 @@
 import { Container, Graphics, Sprite, Texture } from 'pixi.js';
 import type { ParticleKind, StyleDef } from '../styles/types';
 import { easeOutCubic, easeOutExpo } from '../core/ease';
+import { Rng } from '../core/rng';
 
 type Range = number | [number, number];
-const pickR = (r: Range) => (typeof r === 'number' ? r : r[0] + Math.random() * (r[1] - r[0]));
 
 export interface BurstOpts {
   x: number;
@@ -143,10 +143,25 @@ export class Fx {
   private ringPool: Graphics[] = [];
   maxParticles = 600;
   maxRings = 20;
+  /** While muted (off-screen settling) nothing is emitted. */
+  muted = false;
+  /** Particles draw from the template's own seeded stream, so a show sparkles the same way every time. */
+  private rng: Rng;
 
-  constructor(public style: StyleDef) {}
+  constructor(
+    public style: StyleDef,
+    seed = 1,
+  ) {
+    this.rng = new Rng(seed ^ 0x5bd1e995);
+  }
+
+  private pick(r: Range): number {
+    return typeof r === 'number' ? r : r[0] + this.rng.next() * (r[1] - r[0]);
+  }
 
   burst(o: BurstOpts): void {
+    if (this.muted) return;
+    const rnd = () => this.rng.next();
     const kind = o.kind ?? this.style.particleKinds[0];
     const tex = particleTexture(kind);
     const n = Math.min(o.n, this.maxParticles - this.ps.length);
@@ -159,35 +174,35 @@ export class Fx {
       }
       s.texture = tex;
       s.blendMode = this.style.particleBlend;
-      s.tint = Array.isArray(o.color) ? o.color[(Math.random() * o.color.length) | 0] : o.color;
+      s.tint = Array.isArray(o.color) ? o.color[(rnd() * o.color.length) | 0] : o.color;
       s.position.set(o.x, o.y);
-      s.rotation = Math.random() * Math.PI * 2;
+      s.rotation = rnd() * Math.PI * 2;
       s.visible = true;
-      const a = o.angle !== undefined ? o.angle + (Math.random() - 0.5) * (o.spread ?? Math.PI * 2) : Math.random() * Math.PI * 2;
-      const sp = pickR(o.speed);
-      const size = pickR(o.size);
+      const a = o.angle !== undefined ? o.angle + (rnd() - 0.5) * (o.spread ?? Math.PI * 2) : rnd() * Math.PI * 2;
+      const sp = this.pick(o.speed);
+      const size = this.pick(o.size);
       s.scale.set(size / 64);
       s.alpha = 0;
       this.ps.push({
         s,
         vx: Math.cos(a) * sp,
         vy: Math.sin(a) * sp,
-        life: pickR(o.life),
+        life: this.pick(o.life),
         age: 0,
         size,
         grow: o.grow ?? 0.2,
         g: o.gravity ?? 0,
         drag: o.drag ?? 0.2,
-        spin: o.spin !== undefined ? pickR(o.spin) * (Math.random() < 0.5 ? -1 : 1) : 0,
+        spin: o.spin !== undefined ? this.pick(o.spin) * (rnd() < 0.5 ? -1 : 1) : 0,
         alpha: o.alpha ?? 1,
         stretch: o.stretch ?? 0,
-        flutter: o.flutter ? Math.random() * 10 : -1,
+        flutter: o.flutter ? rnd() * 10 : -1,
       });
     }
   }
 
   ring(o: { x: number; y: number; r0?: number; r1: number; life?: number; width?: number; color: number; dashed?: boolean }): void {
-    if (this.rings.length >= this.maxRings) return;
+    if (this.muted || this.rings.length >= this.maxRings) return;
     let g = this.ringPool.pop();
     if (!g) {
       g = new Graphics();

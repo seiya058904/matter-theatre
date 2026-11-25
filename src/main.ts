@@ -10,6 +10,9 @@ import { App } from './ui/App';
 import { getLang, setLang } from './ui/i18n';
 import { prewarmTextures } from './render/SceneRenderer';
 
+/** Query parameters that preview or test a show without becoming the visitor's saved show. */
+const PREVIEW = ['only', 'all', 'style', 'bg', 'link', 'item', 'pause', 'qa'];
+
 function initialShow(q: URLSearchParams): ShowConfig {
   const isScene = (id: string) => !!templateById(id);
   const isStyle = (id: string) => STYLES.some((s) => s.id === id);
@@ -36,11 +39,11 @@ async function boot(): Promise<void> {
   const cfg = initialShow(q);
   stage.applyStyle(styleById(cfg.style), cfg.bg);
   // Compile shaders and build shared textures before anything is shown.
-  prewarmTextures();
+  prewarmTextures(stage.app.renderer);
   director.prewarm();
-  const app = new App(stage, director, cfg);
+  const app = new App(stage, director, cfg, !PREVIEW.some((k) => q.has(k)));
   if (q.has('item')) {
-    director.load(cfg, styleById(cfg.style), Number(q.get('item')));
+    director.load(cfg, styleById(cfg.style), Number(q.get('item')), { sync: true });
     const t = Number(q.get('t') ?? 0);
     if (t) director.fastForward(t);
     if (q.has('pause')) director.playing = false;

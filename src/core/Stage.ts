@@ -1,4 +1,4 @@
-import { Application, Container } from 'pixi.js';
+import { Application, Container, Graphics } from 'pixi.js';
 import { BackgroundLayer } from '../fx/Background';
 import { FinishFilter } from '../fx/filters';
 import type { StyleDef } from '../styles/types';
@@ -20,6 +20,8 @@ export class Stage {
   readonly world = new Container();
   readonly scenes = new Container();
   readonly overlay = new Container();
+  /** A black curtain over the whole stage, closed while the look changes. */
+  readonly curtain = new Graphics();
   finish: FinishFilter | null = null;
   style: StyleDef | null = null;
   scale = 1;
@@ -43,7 +45,8 @@ export class Stage {
     });
     host.appendChild(this.app.canvas);
     this.world.addChild(this.scenes, this.overlay);
-    this.app.stage.addChild(this.bg.sprite, this.world);
+    this.curtain.visible = false;
+    this.app.stage.addChild(this.bg.sprite, this.world, this.curtain);
     this.app.stage.filterArea = this.app.screen;
     this.app.renderer.on('resize', () => this.layout());
     this.layout();
@@ -68,7 +71,13 @@ export class Stage {
     this.scale = Math.min(w / W, h / H);
     this.world.scale.set(this.scale);
     this.world.position.set((w - W * this.scale) / 2, (h - H * this.scale) / 2);
+    this.curtain.clear().rect(0, 0, w, h).fill(0x000000);
     if (this.finish) this.finish.res = this.resolution;
+  }
+
+  setCurtain(a: number): void {
+    this.curtain.alpha = a;
+    this.curtain.visible = a > 0.001;
   }
 
   applyStyle(style: StyleDef, bgIndex: number): void {

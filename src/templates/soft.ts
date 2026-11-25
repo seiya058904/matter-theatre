@@ -62,14 +62,16 @@ const jellyRain: SceneDef = {
   duration: 13,
   energy: 2,
   endState: 'settle',
-  presettle: 3,
+  // Jellies resting in a curved bowl keep easing into place for a long while.
+  presettle: 9,
   setup(ctx) {
     const { tl, rng } = ctx;
     const cx = W / 2;
     wallPath(ctx, bowlOf(cx), 22, 'structure', { friction: 0.6 });
     ctx.r.impactMin = 4;
-    softBody(ctx, cx - 140, 838, 84, { hue: 0.1 }, { hz: 6, damping: 0.22 });
-    softBody(ctx, cx + 160, 852, 70, { hue: 0.3 }, { hz: 6, damping: 0.22 });
+    // Two jellies already lie at the bottom of the bowl, set down where they come to rest.
+    softBody(ctx, cx - 60, 896, 84, { hue: 0.1 }, { hz: 6, damping: 0.22 });
+    softBody(ctx, cx + 100, 888, 70, { hue: 0.3 }, { hz: 6, damping: 0.22 });
     const held: Soft[] = [];
     for (let k = 0; k < 7; k++) {
       const R = k === 6 ? 118 : rng.range(52, 86);
@@ -93,7 +95,8 @@ const jellySteps: SceneDef = {
   duration: 12,
   energy: 2,
   endState: 'settle',
-  presettle: 3,
+  // Jellies leaning on the gate rock gently for a long while; they are seen only once still.
+  presettle: 12,
   canDrop: true,
   setup(ctx) {
     const steps: MBody[] = [];
@@ -253,7 +256,9 @@ const waterBalloon: SceneDef = {
     staticShape(ctx, spike.x, gy - 130 / 3, [{ x: -15, y: 130 / 3 }, { x: 15, y: 130 / 3 }, { x: 0, y: (-2 * 130) / 3 }], 'accent', { friction: 0.4 });
     const waterColor = ctx.style.water.color;
     const balloon = (x: number, y: number, R: number, hue: number) => {
-      const skin = softBody(ctx, x, y, R, { hue, front: true }, { hz: 15, inflate: 0.35, held: true, gas: false, density: 0.007, damping: 0.06, bend: 0.12, restitution: 0.1 });
+      // Balloon rubber is stretched to over twice its rest length: when it tears it snaps back hard into
+      // a small shred. (Softer per unit stretch, so the skin's tension at rest is what it was.)
+      const skin = softBody(ctx, x, y, R, { hue, front: true }, { hz: 10.3, inflate: 1.2, held: true, gas: false, density: 0.007, damping: 0.06, bend: 0.12, restitution: 0.1 });
       const beads: MBody[] = [];
       const br = 8.5;
       const inner = R - skin.node * 2 - br;

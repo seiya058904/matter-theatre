@@ -148,11 +148,13 @@ const trapdoors: SceneDef = {
   duration: 11,
   energy: 3,
   endState: 'settle',
-  presettle: 2,
+  // Loaded shelves: cargo leaning on cargo takes a while to stop creeping.
+  presettle: 7,
   setup(ctx) {
     const { r, rng, tl, world } = ctx;
     ctx.engine.constraintIterations = 8;
     const latches: MBody[] = [];
+    const doors: MBody[] = [];
     const w = 340;
     // Each shelf sits under the spill of the one above; doors hinge on the left, latch on the right.
     const shelves = [
@@ -161,13 +163,17 @@ const trapdoors: SceneDef = {
       { x: 900, y: 740 },
     ];
     shelves.forEach((s, i) => {
-      for (const side of i === 0 ? [-1, 1] : [1]) staticRect(ctx, s.x + side * (w / 2 + 12), s.y - 80, 14, 140, 'structure');
+      // Cargo spills off the latch end (right), so every shelf can be walled at both ends.
+      for (const side of [-1, 1]) staticRect(ctx, s.x + side * (w / 2 + 12), s.y - 80, 14, 140, 'structure');
       const door = rect(ctx, s.x, s.y, w, 16, { role: 'debris', hue: i / 2 }, { density: 0.003, friction: 0.3 });
       Composite.add(world, Constraint.create({ pointA: { x: s.x - w / 2, y: s.y }, bodyB: door, pointB: { x: -w / 2, y: 0 }, length: 0, stiffness: 1 }));
       // The hinge pin is drawn, not felt: the door turns about the constraint.
       staticCircle(ctx, s.x - w / 2, s.y, 7, 'structure', { collisionFilter: { group: 0, category: 0x0002, mask: 0 } });
       r.track(door);
       latches.push(staticRect(ctx, s.x + w / 2 - 8, s.y + 16, 30, 16, 'accent'));
+      // Hinged at one end and latched at the other, a closed door is rigid: it is held until its latch opens.
+      Body.setStatic(door, true);
+      doors.push(door);
       for (let k = 0; k < 10; k++) {
         const x = s.x - w / 2 + 38 + (k % 5) * 66 + rng.range(-3, 3);
         const y = s.y - 36 - Math.floor(k / 5) * 52;
@@ -182,7 +188,13 @@ const trapdoors: SceneDef = {
     return {
       entry: { x: 720, y: 520 },
       floors: basin,
-      enter: () => latches.forEach((l, i) => tl.at(tl.t + 0.3 + i * 1.7, () => open(ctx, l))),
+      enter: () =>
+        latches.forEach((l, i) =>
+          tl.at(tl.t + 0.3 + i * 1.7, () => {
+            open(ctx, l);
+            release(doors[i]);
+          }),
+        ),
     };
   },
 };

@@ -1,4 +1,4 @@
-import { Container, Graphics, GraphicsContext, MeshRope, Point, Texture } from 'pixi.js';
+import { Container, Graphics, GraphicsContext, MeshRope, Point, RenderTexture, Sprite, Texture, type Renderer } from 'pixi.js';
 import Matter from 'matter-js';
 import type { Role } from '../core/types';
 import type { Look, Pt, Shape, StyleDef, TrailKind } from '../styles/types';
@@ -25,6 +25,9 @@ export interface BodyOpts {
 }
 
 type Interp = Body & { _px?: number; _py?: number; _pa?: number };
+
+/** Trails take one sample per this much show time. */
+const TRAIL_DT = 1 / 60;
 
 const trailTex = new Map<TrailKind, Texture>();
 
@@ -63,12 +66,30 @@ function trailTexture(kind: TrailKind): Texture {
   return t;
 }
 
-/** A motion trail drawn as one GPU rope mesh (no per-frame geometry building on the CPU). */
-/** Builds every trail and particle texture up front so the first impact or trail never hitches. */
-export function prewarmTextures(): void {
-  for (const k of ['soft', 'crisp', 'brush', 'dash', 'blocks'] as TrailKind[]) trailTexture(k);
-  for (const k of ['dot', 'spark', 'square', 'shard', 'flake', 'blot', 'mote'] as const) particleTexture(k);
+/**
+ * Builds every trail and particle texture up front and draws each once off-screen, so it is
+ * already on the GPU: the first impact or trail of a show never hitches.
+ */
+export function prewarmTextures(renderer?: Renderer): void {
+  const textures = [
+    ...(['soft', 'crisp', 'brush', 'dash', 'blocks'] as TrailKind[]).map(trailTexture),
+    ...(['dot', 'spark', 'square', 'shard', 'flake', 'blot', 'mote'] as const).map(particleTexture),
+  ];
+  if (!renderer) return;
+  const holder = new Container();
+  textures.forEach((t, i) => {
+    const s = new Sprite(t);
+    s.position.set(i * 4, 0);
+    s.scale.set(0.05);
+    holder.addChild(s);
+  });
+  const rt = RenderTexture.create({ width: 64, height: 16 });
+  renderer.render({ container: holder, target: rt, clear: true });
+  holder.destroy({ children: true });
+  rt.destroy(true);
 }
+
+/** A motion trail drawn as one GPU rope mesh (no per-frame geometry building on the CPU). */
 
 class Trail {
   readonly rope: MeshRope;
@@ -98,11 +119,24 @@ class Trail {
     }
   }
 
-  push(x: number, y: number): void {
-    const h = this.hist.shift()!;
-    h.x = x;
-    h.y = y;
-    this.hist.push(h);
+  /**
+   * Advances the trail: `steps` new samples (one per 1/60 s of show time, so a trail is equally long
+   * at any refresh rate), spread from the last sample to the body; otherwise only the head follows.
+   */
+  push(x: number, y: number, steps: number): void {
+    const last = this.hist[this.n - 1];
+    const lx = last.x;
+    const ly = last.y;
+    for (let k = 1; k <= steps; k++) {
+      const h = this.hist.shift()!;
+      h.x = lx + ((x - lx) * k) / steps;
+      h.y = ly + ((y - ly) * k) / steps;
+      this.hist.push(h);
+    }
+    if (!steps) {
+      last.x = x;
+      last.y = y;
+    }
     for (let i = 0; i < this.n; i++) {
       // A tiny monotonic offset keeps the rope's normals defined when a body rests.
       this.points[i].set(this.hist[i].x + i * 0.01, this.hist[i].y + i * 0.003);
@@ -152,6 +186,10 @@ function releaseCtx(key: string): void {
 /** Number of live shared geometries (for QA). */
 export const contextCount = () => contexts.size;
 
+/** Geometries already drawn once (tessellated and prepared on the GPU). */
+const warmed = new WeakSet<GraphicsContext>();
+let warmTarget: RenderTexture | null = null;
+
 export class BodyView {
   flash = 0;
   alpha = 1;
@@ -171,6 +209,8 @@ export class BodyView {
   squashV = 0;
   squashDir = 0;
   built = false;
+  /** The shared geometries this view draws with. */
+  readonly ctxs: GraphicsContext[] = [];
   private keys: string[] = [];
 
   constructor(
@@ -199,6 +239,8 @@ export class BodyView {
     this.gfx = new Graphics(acquire(kBody, (g) => st.drawBody(g, shapes, look)));
     this.gfx.blendMode = st.blend;
     this.hi = new Graphics(acquire(kHi, (g) => st.drawFlash(g, shapes, look)));
+    this.ctxs.length = 0;
+    this.ctxs.push(this.gfx.context, this.hi.context);
     this.hi.blendMode = st.flashBlend ?? 'add';
     this.hi.alpha = 0;
     this.hi.visible = false;
@@ -226,6 +268,7 @@ export class BodyView {
         }),
       );
       this.shadowLayer.addChild(this.shadow);
+      this.ctxs.push(this.shadow.context);
     }
   }
 
@@ -375,19 +418,24 @@ export class SceneRenderer {
   private alpha = 1;
   private seedN = 0;
   private cooldown = new WeakMap<Body, number>();
-  private clock = 0;
+  /** Show time not yet turned into trail samples. */
+  private trailAcc = 0;
+  private trailSteps = 0;
   impactMin = 2.5;
   impactRange = 14;
   impactsEnabled = true;
   /** While true, new views queue their Pixi construction instead of building at once. */
   defer = false;
   private queue: BodyView[] = [];
+  /** Built views whose geometry has not been tessellated yet. */
+  private cold: BodyView[] = [];
 
   constructor(
     readonly style: StyleDef,
     readonly engine: Matter.Engine,
+    seed = 1,
   ) {
-    this.fx = new Fx(style);
+    this.fx = new Fx(style, seed);
     if (style.shadow) this.shadowLayer.alpha = style.shadow.alpha;
     this.blobG.blendMode = style.blend;
     this.blobFrontG.blendMode = style.blend;
@@ -434,6 +482,7 @@ export class SceneRenderer {
 
   private finish(v: BodyView): void {
     v.build();
+    if (this.defer) this.cold.push(v);
     const opts = v.opts;
     const b = v.body;
     if (opts.trail && !opts.hidden && !v.trail) {
@@ -454,6 +503,32 @@ export class SceneRenderer {
       if (this.views.get(v.body) === v) this.finish(v);
     }
     return this.queue.length;
+  }
+
+  /**
+   * Draws queued geometry once, off-screen and a few shapes at a time, until `deadline`
+   * (performance.now()), so a template coming on stage does not spend its first visible frame
+   * tessellating and preparing hundreds of shapes. Returns how many views are left.
+   */
+  warm(renderer: Renderer, deadline: number): number {
+    warmTarget ??= RenderTexture.create({ width: 4, height: 4 });
+    while (this.cold.length && performance.now() < deadline) {
+      const batch = new Container();
+      while (this.cold.length && batch.children.length < 24) {
+        const v = this.cold.pop()!;
+        if (this.views.get(v.body) !== v) continue;
+        for (const c of v.ctxs) {
+          if (warmed.has(c)) continue;
+          warmed.add(c);
+          const g = new Graphics(c);
+          g.blendMode = v.gfx.blendMode;
+          batch.addChild(g);
+        }
+      }
+      if (batch.children.length) renderer.render({ container: batch, target: warmTarget, clear: true });
+      batch.destroy({ children: true, context: false });
+    }
+    return this.cold.length;
   }
 
   track(b: Body): void {
@@ -558,7 +633,8 @@ export class SceneRenderer {
       const n = pair.collision.normal;
       const rel = Math.abs((a.velocity.x - b.velocity.x) * n.x + (a.velocity.y - b.velocity.y) * n.y);
       if (rel < this.impactMin) continue;
-      const now = this.clock;
+      // Cool-downs run on the engine's clock, so the same contacts flash the same way every time.
+      const now = this.engine.timing.timestamp / 1000;
       if ((this.cooldown.get(a) ?? -1) > now && (this.cooldown.get(b) ?? -1) > now) continue;
       this.cooldown.set(a, now + 0.09);
       this.cooldown.set(b, now + 0.09);
@@ -628,14 +704,22 @@ export class SceneRenderer {
       v.shadow.scale.set(v.scale);
     }
     if (v.trail) {
-      if (dt > 0) v.trail.push(px, py);
+      if (dt > 0) v.trail.push(px, py, this.trailSteps);
       v.trail.rope.alpha = this.style.trail.alpha * v.alpha;
     }
   }
 
   render(alpha: number, dt: number): void {
     this.alpha = alpha;
-    this.clock += dt;
+    this.trailSteps = 0;
+    if (dt > 0) {
+      this.trailAcc += dt;
+      while (this.trailAcc >= TRAIL_DT - 1e-7 && this.trailSteps < 4) {
+        this.trailAcc -= TRAIL_DT;
+        this.trailSteps++;
+      }
+      if (this.trailAcc > TRAIL_DT) this.trailAcc = 0;
+    }
     if (this.backDrawers.length) {
       this.back.clear();
       for (const d of this.backDrawers) d(this.back, dt);
@@ -691,6 +775,7 @@ export class SceneRenderer {
     for (const v of this.views.values()) v.destroy();
     this.views.clear();
     this.tracked.clear();
+    this.cold.length = 0;
     this.fx.destroy();
     this.root.destroy({ children: true });
   }

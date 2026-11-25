@@ -123,6 +123,8 @@ export class App {
     private stage: Stage,
     private director: Director,
     initial: ShowConfig,
+    /** Remember the show for the next visit (off while a preview URL is open, until the show is edited). */
+    private persist = true,
   ) {
     this.cfg = initial;
     this.deck.setAttribute('aria-label', t('order'));
@@ -141,24 +143,35 @@ export class App {
 
   // ---------------- show state ----------------
 
-  apply(cfg: ShowConfig, startItem = 0): void {
-    const styleChanged = !this.stage.style || this.stage.style.id !== cfg.style || this.cfg.bg !== cfg.bg;
+  /** Applies a show. `keep`: an edit — the template on stage carries on if it is still item `startItem`. */
+  apply(cfg: ShowConfig, startItem = 0, keep = false): void {
     this.cfg = cfg;
     const style = styleById(cfg.style);
-    if (styleChanged || !this.stage.finish) this.stage.applyStyle(style, cfg.bg);
-    this.director.load(cfg, style, clamp(startItem, 0, Math.max(0, cfg.segments.length - 1)));
+    this.director.load(cfg, style, clamp(startItem, 0, Math.max(0, cfg.segments.length - 1)), { keep });
     document.documentElement.style.setProperty('--accent', style.accent);
-    localStorage.setItem('mt.show.v4', encodeShow(cfg));
+    if (this.persist) localStorage.setItem('mt.show.v4', encodeShow(cfg));
     history.replaceState(null, '', '#show=' + encodeShow(cfg));
     this.renderBrand();
     this.renderBar();
     if (this.composing) this.renderCompose();
   }
 
-  private update(mut: (c: ShowConfig) => void, startItem?: number): void {
+  /**
+   * Edits the show. By default the template on stage carries on (it is re-timed in the new running
+   * order); `jumpTo` moves the show to that item instead.
+   */
+  private update(mut: (c: ShowConfig) => void, jumpTo?: number, playingAt?: number): void {
     const c = clone(this.cfg);
     mut(c);
-    this.apply(c, startItem ?? this.director.currentIndex);
+    this.persist = true;
+    if (jumpTo !== undefined) this.apply(c, jumpTo);
+    else this.apply(c, playingAt ?? this.director.currentIndex, true);
+  }
+
+  /** A whole new show chosen by the visitor (a house show or a shuffle). */
+  private choose(cfg: ShowConfig): void {
+    this.persist = true;
+    this.apply(cfg, 0);
   }
 
   private onItem(): void {
@@ -462,7 +475,7 @@ export class App {
     const acts = el('div', 'acts');
     acts.append(
       shows,
-      button(ICON.shuffle, t('shuffle'), () => this.apply(shuffleShow(new Rng((Math.random() * 1e9) | 0), 12, this.cfg.style), 0), 'icon'),
+      button(ICON.shuffle, t('shuffle'), () => this.choose(shuffleShow(new Rng((Math.random() * 1e9) | 0), 12, this.cfg.style)), 'icon'),
       button(ICON.link, t('share'), () => this.share(), 'icon'),
       button(ICON.export, t('export'), () => this.openExport(), 'icon'),
       button(t('lang'), t('langName'), () => this.toggleLang(), 'icon lang'),
@@ -495,7 +508,7 @@ export class App {
       li.style.setProperty('--c', css(ramp(st.ramp, n > 1 ? i / (n - 1) : 0.5)));
       const pic = el('div', 'pic');
       pic.append(this.thumb(def), el('b', 'num', pad(i + 1)), el('span', 'grip', ICON.grip));
-      const len = button(t(`len${seg.len}` as Key), t('lenTitle'), () => this.update((c) => (c.segments[i].len = ((seg.len + 1) % 3) as 0 | 1 | 2), i), 'len' + (seg.len !== 1 ? ' set' : ''));
+      const len = button(t(`len${seg.len}` as Key), t('lenTitle'), () => this.update((c) => (c.segments[i].len = ((seg.len + 1) % 3) as 0 | 1 | 2)), 'len' + (seg.len !== 1 ? ' set' : ''));
       const rm = button(ICON.close, t('remove'), () => this.removeAt(i), 'rm');
       li.append(pic, len, rm);
       li.addEventListener('pointerdown', (e) => this.pressCue(e, li, i));
@@ -515,7 +528,10 @@ export class App {
 
   private removeAt(i: number): void {
     const def = templateById(this.cfg.segments[i]?.id ?? '');
-    this.update((c) => c.segments.splice(i, 1), Math.max(0, Math.min(i, this.cfg.segments.length - 2)));
+    const cur = this.director.currentIndex;
+    // Removing the cue on stage moves on to its neighbour; removing any other leaves the stage alone.
+    if (cur === i) this.update((c) => c.segments.splice(i, 1), Math.max(0, Math.min(i, this.cfg.segments.length - 2)));
+    else this.update((c) => c.segments.splice(i, 1), undefined, cur > i ? cur - 1 : cur);
     if (def) this.toast(t('removed', { name: def.title[getLang()] }));
   }
 
@@ -523,10 +539,17 @@ export class App {
     const n = this.cfg.segments.length;
     to = clamp(to, 0, n - 1);
     if (to === from) return;
-    this.update((c) => {
-      const [m] = c.segments.splice(from, 1);
-      c.segments.splice(to, 0, m);
-    }, to);
+    // The cue on stage keeps playing wherever it now stands.
+    const cur = this.director.currentIndex;
+    const at = cur === from ? to : cur > from && cur <= to ? cur - 1 : cur < from && cur >= to ? cur + 1 : cur;
+    this.update(
+      (c) => {
+        const [m] = c.segments.splice(from, 1);
+        c.segments.splice(to, 0, m);
+      },
+      undefined,
+      at,
+    );
     if (focus) this.strip.querySelector<HTMLElement>(`.cue[data-i="${to}"]`)?.focus();
   }
 
@@ -668,7 +691,8 @@ export class App {
   }
 
   private addTemplate(def: SceneDef, at: number): void {
-    this.update((c) => c.segments.splice(at, 0, { id: def.id, len: 1 }), at);
+    const cur = this.director.currentIndex;
+    this.update((c) => c.segments.splice(at, 0, { id: def.id, len: 1 }), this.cfg.segments.length ? undefined : 0, cur >= at ? cur + 1 : cur);
     this.toast(t('added', { name: def.title[getLang()] }));
   }
 
@@ -786,7 +810,7 @@ export class App {
             this.update((c) => {
               if (s === 'auto') delete c.segments[into].segue;
               else c.segments[into].segue = s as Segue;
-            }, into),
+            }),
           (s) => s === 'drop' && !from?.canDrop,
         );
       },
@@ -817,7 +841,7 @@ export class App {
           list.append(
             button(`<i style="background:linear-gradient(90deg,${st.ramp.map(css).join(',')})"></i><b>${p.name[lang]}</b><small>${p.note[lang]}</small>`, p.name[lang], () => {
               this.closePopover();
-              this.apply(clone(p.cfg), 0);
+              this.choose(clone(p.cfg));
             }, 'opt show' + (on ? ' on' : '')),
           );
         }
@@ -922,7 +946,7 @@ export class App {
     document.body.classList.add('recording');
     this.stage.lockSize(w, h);
     this.director.loop = false;
-    this.director.load(this.cfg, styleById(this.cfg.style), 0);
+    this.director.load(this.cfg, styleById(this.cfg.style), 0, { sync: true });
     this.recorder.start(this.stage.app.canvas as HTMLCanvasElement, format, w >= 1920 ? 16e6 : 8e6);
     this.recBox = el('div', 'recbox');
     this.root.append(this.recBox);

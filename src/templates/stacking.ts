@@ -114,7 +114,8 @@ const mobile: SceneDef = {
   duration: 12,
   energy: 1,
   endState: 'periodic',
-  presettle: 1.5,
+  // A mobile turns slowly for a long time before it hangs still.
+  presettle: 9,
   setup(ctx) {
     const { world, r } = ctx;
     const top = { x: W / 2, y: 150 };

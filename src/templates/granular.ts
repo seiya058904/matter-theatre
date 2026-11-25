@@ -132,7 +132,8 @@ const avalanche: SceneDef = {
   duration: 11,
   energy: 3,
   endState: 'settle',
-  presettle: 2.5,
+  // The mound needs this long to come fully to rest before it is seen.
+  presettle: 6,
   canDrop: true,
   setup(ctx) {
     const { rng } = ctx;
@@ -198,7 +199,7 @@ const drum: SceneDef = {
   duration: 12,
   energy: 2,
   endState: 'periodic',
-  presettle: 2.5,
+  presettle: 6,
   setup(ctx) {
     const { world, r, rng } = ctx;
     const cx = W / 2;

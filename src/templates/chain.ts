@@ -99,7 +99,7 @@ const seesawToss: SceneDef = {
   duration: 11,
   energy: 4,
   endState: 'settle',
-  presettle: 1.5,
+  presettle: 4,
   canDrop: true,
   setup(ctx) {
     const { world } = ctx;

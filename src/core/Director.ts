@@ -1,10 +1,7 @@
 import { Container, Graphics, Rectangle, Sprite } from 'pixi.js';
 import Matter from 'matter-js';
-import { Camera } from './Camera';
-import { Timeline } from './Timeline';
-import { Rng, hashString } from './rng';
 import { clamp, easeInOutSine, easeOutCubic, smooth } from './ease';
-import { H, STEP, W, type SceneContext, type SceneDef, type SceneInstance } from './types';
+import { H, STEP, W, type SceneDef } from './types';
 import { SceneRenderer } from '../render/SceneRenderer';
 import type { Stage } from './Stage';
 import type { StyleDef } from '../styles/types';
@@ -12,6 +9,7 @@ import { LEN_SCALE, OVERLAP, type Segue, type ShowConfig } from '../show/ShowCon
 import { InkRevealFilter } from '../fx/filters';
 import { schedule } from '../show/schedule';
 import { chooseSegues } from '../show/segues';
+import { buildSim, createEngine, sceneSeed, settleAll, settleStep, stepSim, type Sim } from './sim';
 
 export interface Item {
   def: SceneDef;
@@ -22,41 +20,50 @@ export interface Item {
   segue: Segue;
 }
 
-interface Running {
+interface Running extends Sim {
   item: Item;
   /** Position in the running order. */
   index: number;
   /** Global start time of this run. */
   start: number;
-  inst: SceneInstance;
-  engine: Matter.Engine;
-  r: SceneRenderer;
-  camera: Camera;
-  tl: Timeline;
   root: Container;
   camC: Container;
-  entered: boolean;
-  enterAt: number;
-  local: number;
-  slow: { from: number; to: number; t0: number; ease: number; hold: number } | null;
-  /** Off-screen settling steps still to run before the run is shown. */
-  settle: number;
-  /** Physical laws registered by the template (springs, fields, buoyancy, gas pressure). */
-  forces: (() => void)[];
   /** Floor drop in progress: the floors fall away faster than anything standing on them. */
   drop: { v: number; t: number } | null;
+  /** How this run came in, and over how long (a jump comes in faster than a planned segue). */
+  segue: Segue | null;
+  segueLen: number;
+}
+
+/** A requested jump to another item: prepared off-screen while the current picture keeps playing. */
+interface Jump {
+  run: Running;
+  /** The look changes too: the stage closes to black, switches, and opens on the new look. */
+  look: boolean;
 }
 
 /** At most this many physics steps per rendered frame; beyond it time is dropped, never piled up. */
 const MAX_STEPS = 4;
-/** The next template is built this long before its segue starts (spreads cost away from the cut). */
-const PREBUILD = 2.2;
-/** Off-screen settling steps per frame. */
-const SETTLE_PER_FRAME = 8;
+/** Shortest and longest lead with which the next template is built before its segue starts. */
+const LEAD_MIN = 3;
+const LEAD_MAX = 6;
+/** Main-thread time per frame given to preparing the next template (settling and building views). */
+const BUDGET_MS = 2.5;
+/** The most a frame may give when preparation is late (spread thin rather than paid at the cut). */
+const BUDGET_MAX = 7;
+/** Rough cost of building and tessellating one body's views (ms), for planning. */
+const VIEW_MS = 0.12;
+/** A jump (skip, card click, edit) comes in through the backdrop over this long. */
+const JUMP_LEN = 0.5;
+/** Seconds for the curtain to close and to open again around a change of look. */
+const CURTAIN_CLOSE = 0.22;
+const CURTAIN_OPEN = 0.34;
 
 /**
- * Plays a running order of templates: builds each one early, settles it off-screen,
- * runs every live template on a fixed 120 Hz step, performs the segues and loops.
+ * Plays a running order of templates: builds each one early, settles it off-screen in small
+ * time slices, runs every live template on a fixed 120 Hz step, performs the segues and loops.
+ * Everything visible (camera, particles, trails, backdrop) advances on the show's own clock,
+ * so a show looks the same at any refresh rate and in an exported video.
  */
 export class Director {
   items: Item[] = [];
@@ -71,11 +78,17 @@ export class Director {
 
   private running: Running[] = [];
   private pending: Running | null = null;
+  private jump: Jump | null = null;
   private nextIndex = 0;
   private nextStart = 0;
+  private lead = LEAD_MIN;
   private passStart = 0;
   private acc = 0;
+  /** Show clock (time + interpolation) at the last rendered frame. */
+  private vclock = 0;
   private visualTime = 0;
+  private frameDt = 1 / 60;
+  private curtain = 0;
   private style!: StyleDef;
   private cfg!: ShowConfig;
   private iris = new Graphics();
@@ -83,7 +96,8 @@ export class Director {
   private inkArea = new Rectangle(-240, -240, W + 480, H + 480);
   private fadeIn = 1;
   private ended = false;
-  private headless = false;
+  /** Measured settling cost per template (ms per step), so heavy ones are prepared earlier. */
+  private stepCost = new Map<string, number>();
 
   constructor(
     private stage: Stage,
@@ -92,7 +106,15 @@ export class Director {
 
   // ---------------- running order ----------------
 
-  load(cfg: ShowConfig, style: StyleDef, startAt = 0): void {
+  /**
+   * Loads a running order and plays it from item `startAt`.
+   * - `sync`: prepare at once (exports, QA); the call blocks until the item is ready.
+   * - `keep`: an edit of the running order; if item `startAt` is the template already playing,
+   *   it simply carries on (nothing restarts), otherwise the show jumps there.
+   * Otherwise the show jumps: the item is prepared in small slices while the picture keeps playing.
+   */
+  load(cfg: ShowConfig, style: StyleDef, startAt = 0, how: { sync?: boolean; keep?: boolean } = {}): void {
+    const look = !this.style || style.id !== this.style.id || cfg.bg !== this.cfg.bg;
     this.cfg = cfg;
     this.style = style;
     const defs: { def: SceneDef; scale: number; segue?: Segue }[] = [];
@@ -105,31 +127,66 @@ export class Director {
     const segues = chooseSegues(defs.map((d) => d.def), cfg.link, style.id, cfg.seed, defs.map((d) => d.segue));
     this.items = defs.map((d, i) => ({ def: d.def, dur: durs[i], start: plan.starts[i], segue: segues[i] }));
     this.total = plan.total;
-    this.seek(startAt);
+    if (!this.items.length) {
+      this.clear();
+      if (look) this.stage.applyStyle(style, cfg.bg);
+      return;
+    }
+    const index = clamp(Math.round(startAt), 0, this.items.length - 1);
+    if (how.sync) {
+      this.clear();
+      if (look) this.stage.applyStyle(style, cfg.bg);
+      const run = this.build(index, this.items[index].start, 0.6);
+      this.finishSettle(run);
+      this.land({ run, look: false });
+      return;
+    }
+    if (how.keep && !look && this.carryOn(index)) return;
+    this.goTo(index, look);
   }
 
-  /** Restart playback from the beginning of item `index`. */
+  /** Jumps to item `index` (skips, the progress bar, a cue card). */
   seek(index: number): void {
-    for (const r of this.running) this.disposeRun(r);
+    if (!this.items.length) return;
+    this.goTo(clamp(Math.round(index), 0, this.items.length - 1), false);
+  }
+
+  private goTo(index: number, look: boolean): void {
+    if (this.jump) {
+      look = look || this.jump.look;
+      this.disposeRun(this.jump.run);
+    }
     if (this.pending) this.disposeRun(this.pending);
-    this.running = [];
     this.pending = null;
-    this.acc = 0;
     this.ended = false;
     this.playing = true;
-    if (!this.items.length) return;
-    index = clamp(Math.round(index), 0, this.items.length - 1);
-    this.time = this.items[index].start;
+    // A jump starts the item from its beginning, as a seek always has (same enter time, same physics).
+    const run = this.build(index, this.items[index].start, 0.6);
+    this.jump = { run, look: look && this.running.length > 0 };
+    if (look && !this.running.length) this.stage.applyStyle(this.style, this.cfg.bg);
+  }
+
+  /** An edit that leaves the playing template in place: re-time it in the new running order. */
+  private carryOn(index: number): boolean {
+    const prim = this.running[this.running.length - 1];
+    const it = this.items[index];
+    if (this.jump || !prim || prim.item.def.id !== it.def.id || Math.abs(prim.item.dur - it.dur) > 1e-9) return false;
+    const shift = it.start - prim.start;
+    for (const r of this.running) r.start += shift;
+    this.time += shift;
+    this.vclock += shift;
     this.passStart = 0;
-    this.nextIndex = index;
-    this.nextStart = this.time;
-    const run = this.build(index, this.time, 0.6);
-    this.finishSettle(run);
-    this.activate(run);
-    this.fadeIn = 0;
+    prim.item = it;
+    prim.index = index;
+    if (this.pending) this.disposeRun(this.pending);
+    this.pending = null;
+    this.ended = false;
+    this.scheduleAfter(prim);
+    return true;
   }
 
   get currentIndex(): number {
+    if (this.jump) return this.jump.run.index;
     const r = this.running[this.running.length - 1];
     return r ? r.index : 0;
   }
@@ -139,111 +196,136 @@ export class Director {
     return Math.max(0, Math.min(this.total, this.time - this.passStart));
   }
 
+  /** True while an item is still being prepared (exports wait for it). */
+  get preparing(): boolean {
+    return !!this.jump;
+  }
+
   get bodyCount(): number {
     return this.running.reduce((n, r) => n + Matter.Composite.allBodies(r.engine.world).length, 0);
   }
 
   // ---------------- lifecycle ----------------
 
-  private build(index: number, start: number, enterAt: number, parent: Container = this.stage.scenes): Running {
-    const item = this.items[index];
+  private make(item: Item, index: number, start: number, enterAt: number, parent: Container): Running {
     const def = item.def;
-    const engine = Matter.Engine.create({ gravity: { x: def.gravity?.x ?? 0, y: def.gravity?.y ?? 1, scale: 0.001 } });
-    engine.positionIterations = 8;
-    engine.velocityIterations = 6;
-    engine.constraintIterations = 4;
-    const camera = new Camera();
-    const r = new SceneRenderer(this.style, engine);
+    const engine = createEngine(def);
+    const r = new SceneRenderer(this.style, engine, sceneSeed(this.cfg.seed, def.id, index));
     r.defer = true;
-    const tl = new Timeline();
-    const rng = new Rng((this.cfg.seed ^ hashString(def.id) ^ (index * 2654435761)) >>> 0);
     const root = new Container();
     const camC = new Container();
     camC.addChild(r.root);
     root.addChild(camC);
     root.visible = false;
     parent.addChild(root);
-    const run: Running = { item, index, start, inst: null as unknown as SceneInstance, engine, r, camera, tl, root, camC, entered: false, enterAt, slow: null, local: 0, settle: Math.round((def.presettle ?? 0) * 120), forces: [], drop: null };
-    const ctx: SceneContext = {
-      engine,
-      world: engine.world,
-      root: r.root,
-      style: this.style,
-      camera,
-      tl,
-      rng,
-      r,
-      renderer: this.stage.app.renderer,
-      duration: item.dur,
-      enterAt,
-      slowmo: (to, hold, ease = 0.35) => {
-        run.slow = { from: engine.timing.timeScale, to, t0: run.local, ease, hold };
-      },
-      force: (fn) => {
-        run.forces.push(fn);
-      },
-    };
-    run.inst = def.setup(ctx);
-    return run;
+    const sim = buildSim(def, engine, r, { style: this.style, seed: this.cfg.seed, index, duration: item.dur, enterAt, renderer: this.stage.app.renderer });
+    return Object.assign(sim, { item, index, start, root, camC, drop: null, segue: item.segue, segueLen: OVERLAP });
   }
 
-  /** Off-screen settling: physics only, the template's clock does not run. */
-  private settleSteps(run: Running, n: number): void {
-    for (let i = 0; i < n && run.settle > 0; i++, run.settle--) {
-      run.r.snapshot();
-      for (const f of run.forces) f();
-      Matter.Engine.update(run.engine, STEP * 1000);
-    }
+  private build(index: number, start: number, enterAt: number): Running {
+    return this.make(this.items[index], index, start, enterAt, this.stage.scenes);
   }
 
   private finishSettle(run: Running): void {
-    this.settleSteps(run, run.settle);
+    settleAll(run);
     run.r.flush();
     run.r.defer = false;
+  }
+
+  /**
+   * This frame's share of preparing what comes next: settle steps and view building, within a
+   * time budget. Only the order of work across frames changes — never the physics.
+   */
+  private prepare(): void {
+    if (!this.jump && !this.pending && this.nextIndex >= 0 && this.items.length && this.time >= this.nextStart - this.lead) {
+      // Building is one frame's whole share of the work.
+      this.pending = this.build(this.nextIndex, this.nextStart, OVERLAP);
+      return;
+    }
+    const run = this.jump?.run ?? this.pending;
+    if (!run) return;
+    const t0 = performance.now();
+    let budget = BUDGET_MS;
+    if (run === this.pending) {
+      // Spread what is left evenly over the frames before the cut, so none of it lands on the cut.
+      const frames = Math.max(1, (this.nextStart - this.time) / Math.max(this.frameDt, 1 / 240));
+      const left = run.settle * (this.stepCost.get(run.def.id) ?? 0.8) + run.r.flush(0) * VIEW_MS;
+      budget = clamp((left / frames) * 1.3, BUDGET_MS, BUDGET_MAX);
+    }
+    const deadline = t0 + budget;
+    if (run.settle > 0) {
+      let n = 0;
+      do {
+        settleStep(run);
+        n++;
+      } while (run.settle > 0 && performance.now() < deadline);
+      const per = (performance.now() - t0) / n;
+      const was = this.stepCost.get(run.def.id);
+      this.stepCost.set(run.def.id, was === undefined ? per : was * 0.6 + per * 0.4);
+    }
+    while (run.settle <= 0 && performance.now() < deadline && run.r.flush(6) > 0);
+    const cold = run.settle <= 0 && run.r.flush(0) === 0 ? run.r.warm(this.stage.app.renderer, deadline) : 1;
+    if (this.jump && cold === 0 && (!this.jump.look || this.curtain >= 1)) {
+      run.r.defer = false;
+      this.land(this.jump);
+    }
+  }
+
+  /** Seconds ahead of its segue at which the next template should start being prepared. */
+  private leadFor(def: SceneDef): number {
+    const steps = Math.round((def.presettle ?? 0) * 120);
+    const ms = steps * (this.stepCost.get(def.id) ?? 0.8) + 24;
+    const seconds = (ms / BUDGET_MS) * Math.max(this.frameDt, 1 / 120);
+    return clamp(seconds * 1.3 + 0.6, LEAD_MIN, LEAD_MAX);
+  }
+
+  /** A prepared jump comes in: the clock moves to the item's place in the running order. */
+  private land(j: Jump): void {
+    this.jump = null;
+    const run = j.run;
+    const shift = run.start - this.time;
+    for (const r of this.running) r.start += shift;
+    this.time = run.start;
+    this.vclock += shift;
+    this.passStart = 0;
+    this.acc = 0;
+    this.ended = false;
+    if (j.look) {
+      this.stage.applyStyle(this.style, this.cfg.bg);
+      while (this.running.length) this.disposeRun(this.running.shift()!);
+    }
+    while (this.running.length > 1) this.disposeRun(this.running.shift()!);
+    if (this.running.length) {
+      run.segue = 'dip';
+      run.segueLen = JUMP_LEN;
+    } else {
+      run.segue = null;
+      if (!j.look) this.fadeIn = 0;
+    }
+    run.r.flush();
+    this.activate(run);
   }
 
   private activate(run: Running): void {
     run.root.visible = true;
     this.running.push(run);
     this.onItem?.(run.index);
+    this.scheduleAfter(run);
+  }
+
+  private scheduleAfter(run: Running): void {
     const next = run.index + 1;
-    if (next < this.items.length) {
-      this.nextIndex = next;
+    if (next < this.items.length || this.loop) {
+      this.nextIndex = next < this.items.length ? next : 0;
       this.nextStart = run.start + run.item.dur - OVERLAP;
-    } else if (this.loop) {
-      this.nextIndex = 0;
-      this.nextStart = run.start + run.item.dur - OVERLAP;
+      this.lead = this.leadFor(this.items[this.nextIndex].def);
     } else {
       this.nextIndex = -1;
     }
   }
 
   private stepRun(run: Running, local: number, dt: number): void {
-    run.local = local;
-    if (run.slow) {
-      const s = run.slow;
-      const k = local - s.t0;
-      let scale: number;
-      if (k < s.ease) scale = s.from + (s.to - s.from) * smooth(k / s.ease);
-      else if (k < s.ease + s.hold) scale = s.to;
-      else if (k < s.ease * 3 + s.hold) scale = s.to + (1 - s.to) * smooth((k - s.ease - s.hold) / (s.ease * 2));
-      else {
-        scale = 1;
-        run.slow = null;
-      }
-      run.engine.timing.timeScale = scale;
-    }
-    run.r.snapshot();
-    if (!run.entered && local >= run.enterAt) {
-      run.entered = true;
-      run.inst.enter?.();
-    }
-    run.tl.advance(local);
-    run.inst.step?.(local, dt);
-    if (run.drop) this.dropFloors(run, dt);
-    for (const f of run.forces) f();
-    Matter.Engine.update(run.engine, dt * 1000);
-    if (this.headless) run.camera.update(dt);
+    stepSim(run, local, dt, run.drop ? () => this.dropFloors(run, dt) : undefined);
   }
 
   private disposeRun(r: Running): void {
@@ -254,6 +336,21 @@ export class Director {
     r.root.destroy({ children: true });
   }
 
+  private clear(): void {
+    for (const r of this.running) this.disposeRun(r);
+    if (this.pending) this.disposeRun(this.pending);
+    if (this.jump) this.disposeRun(this.jump.run);
+    this.running = [];
+    this.pending = null;
+    this.jump = null;
+    this.acc = 0;
+    this.ended = false;
+    this.playing = true;
+    this.passStart = 0;
+    this.time = 0;
+    this.vclock = 0;
+  }
+
   private toWorld(r: Running, p: { x: number; y: number }): { x: number; y: number } {
     return this.stage.world.toLocal(r.camC.toGlobal(p));
   }
@@ -261,9 +358,10 @@ export class Director {
   // ---------------- frame loop ----------------
 
   frame(dtReal: number): void {
-    const dt = this.playing ? Math.min(dtReal, 0.1) : 0;
-    if (this.playing && !this.ended) {
-      this.acc += dt;
+    const real = Math.min(Math.max(dtReal, 0), 0.1);
+    this.frameDt += (real - this.frameDt) * 0.1;
+    if (this.playing && !this.ended && !(this.jump && !this.running.length)) {
+      this.acc += real;
       let n = 0;
       while (this.acc >= STEP && n < MAX_STEPS) {
         this.tick();
@@ -272,36 +370,39 @@ export class Director {
         if (this.ended) break;
       }
       if (this.acc > STEP) this.acc = STEP * 0.5;
-      // Spread the next template's preparation over the frames before it appears.
-      if (this.pending) {
-        if (this.pending.settle > 0) this.settleSteps(this.pending, SETTLE_PER_FRAME);
-        this.pending.r.flush(24);
-      }
     }
-    this.visualTime += dtReal;
-    if (this.fadeIn < 1) this.fadeIn = Math.min(1, this.fadeIn + Math.min(dtReal, 0.1) * 1.4);
-    this.render(this.ended ? 1 : this.acc / STEP, dt);
+    this.prepare();
+    // The curtain is part of the interface (a change of look), not of the show.
+    if (this.jump?.look) this.curtain = Math.min(1, this.curtain + real / CURTAIN_CLOSE);
+    else if (this.curtain > 0) this.curtain = Math.max(0, this.curtain - real / CURTAIN_OPEN);
+    this.stage.setCurtain(smooth(this.curtain));
+    const alpha = this.ended ? 1 : this.acc / STEP;
+    const clock = this.time + alpha * STEP;
+    let vdt = clock - this.vclock;
+    if (vdt < 0 || vdt > 0.25) vdt = 0;
+    this.vclock = clock;
+    this.visualTime += vdt;
+    if (this.fadeIn < 1) this.fadeIn = Math.min(1, this.fadeIn + (this.playing ? vdt : real) * 1.4);
+    this.render(alpha, vdt);
   }
 
   private tick(): void {
     this.time += STEP;
-    if (this.nextIndex >= 0 && !this.pending && this.time >= this.nextStart - PREBUILD) {
-      this.pending = this.build(this.nextIndex, this.nextStart, OVERLAP);
-    }
-    if (this.pending && this.time >= this.nextStart) {
-      const run = this.pending;
+    if (!this.jump && this.nextIndex >= 0 && this.time >= this.nextStart) {
+      // Normally prepared long before; built here only if the machine fell far behind.
+      const run = this.pending ?? this.build(this.nextIndex, this.nextStart, OVERLAP);
       this.pending = null;
       this.finishSettle(run);
       if (run.index === 0 && this.running.length) this.passStart = run.start;
       this.activate(run);
-      if (run.item.segue === 'drop') this.openFloors(this.running[this.running.length - 2]);
+      if (run.segue === 'drop') this.openFloors(this.running[this.running.length - 2]);
     }
     for (const run of this.running) this.stepRun(run, this.time - run.start, STEP);
-    while (this.running.length > 1 && this.time >= this.running[0].start + this.running[0].item.dur) {
+    while (this.running.length > 1 && this.time >= this.running[1].start + this.running[1].segueLen) {
       this.disposeRun(this.running.shift()!);
     }
     const last = this.running[this.running.length - 1];
-    if (this.nextIndex < 0 && last && this.time >= last.start + last.item.dur) {
+    if (!this.jump && this.nextIndex < 0 && last && this.time >= last.start + last.item.dur) {
       this.ended = true;
       this.playing = false;
       this.onEnd?.();
@@ -336,10 +437,9 @@ export class Director {
     const run = this.running[this.running.length - 1];
     if (!run) return;
     const target = run.start + t;
-    this.headless = true;
     let guard = 0;
     while (this.time < target && !this.ended && guard++ < 120 * 120) this.tick();
-    this.headless = false;
+    this.vclock = this.time;
     for (const r of this.running) r.r.resetTrails();
   }
 
@@ -347,62 +447,46 @@ export class Director {
 
   private offscreen(def: SceneDef, enterAt: number): { run: Running; holder: Container; setupMs: number } {
     const holder = new Container();
-    const saved = this.items;
-    this.items = [{ def, dur: def.duration, start: 0, segue: 'dissolve' }];
     const t0 = performance.now();
-    const run = this.build(0, 0, enterAt, holder);
+    const run = this.make({ def, dur: def.duration, start: 0, segue: 'dissolve' }, 0, 0, enterAt, holder);
     const setupMs = performance.now() - t0;
-    this.items = saved;
     run.root.visible = true;
     return { run, holder, setupMs };
+  }
+
+  private still(run: Running, holder: Container, width: number): string {
+    const bg = new Sprite(this.stage.bg.sprite.texture);
+    bg.width = W;
+    bg.height = H;
+    holder.addChildAt(bg, 0);
+    run.r.resetTrails();
+    this.applyCamera(run, 1);
+    run.r.render(1, 1 / 60);
+    run.inst.afterRender?.();
+    if (this.stage.finish) holder.filters = [this.stage.finish];
+    const canvas = this.stage.app.renderer.extract.canvas({ target: holder, frame: new Rectangle(0, 0, W, H), resolution: width / W }) as HTMLCanvasElement;
+    const url = canvas.toDataURL('image/jpeg', 0.85);
+    holder.filters = null;
+    this.disposeRun(run);
+    holder.destroy({ children: true });
+    return url;
   }
 
   /** A still of the template's establishing state over the current backdrop and grade. */
   thumbnail(def: SceneDef, width = 320): string {
     const { run, holder } = this.offscreen(def, 1e9);
-    const bg = new Sprite(this.stage.bg.sprite.texture);
-    bg.width = W;
-    bg.height = H;
-    holder.addChildAt(bg, 0);
     run.settle = Math.min(run.settle, 360);
     this.finishSettle(run);
-    this.headless = true;
     for (let t = 0; t < 0.2; t += STEP) this.stepRun(run, t, STEP);
-    this.headless = false;
-    this.applyCamera(run);
-    run.r.render(1, 1 / 60);
-    run.inst.afterRender?.();
-    if (this.stage.finish) holder.filters = [this.stage.finish];
-    const canvas = this.stage.app.renderer.extract.canvas({ target: holder, frame: new Rectangle(0, 0, W, H), resolution: width / W }) as HTMLCanvasElement;
-    const url = canvas.toDataURL('image/jpeg', 0.85);
-    holder.filters = null;
-    this.disposeRun(run);
-    holder.destroy({ children: true });
-    return url;
+    return this.still(run, holder, width);
   }
 
   /** A still of the template at local time t (QA contact sheets): simulated headless, rendered once. */
   snapshot(def: SceneDef, t: number, width = 320): string {
     const { run, holder } = this.offscreen(def, 0.6);
-    const bg = new Sprite(this.stage.bg.sprite.texture);
-    bg.width = W;
-    bg.height = H;
-    holder.addChildAt(bg, 0);
     this.finishSettle(run);
-    this.headless = true;
     for (let k = 0; k * STEP < t; k++) this.stepRun(run, k * STEP, STEP);
-    this.headless = false;
-    run.r.resetTrails();
-    this.applyCamera(run);
-    run.r.render(1, 1 / 60);
-    run.inst.afterRender?.();
-    if (this.stage.finish) holder.filters = [this.stage.finish];
-    const canvas = this.stage.app.renderer.extract.canvas({ target: holder, frame: new Rectangle(0, 0, W, H), resolution: width / W }) as HTMLCanvasElement;
-    const url = canvas.toDataURL('image/jpeg', 0.85);
-    holder.filters = null;
-    this.disposeRun(run);
-    holder.destroy({ children: true });
-    return url;
+    return this.still(run, holder, width);
   }
 
   /** Headless health check of one template (used by the QA harness). */
@@ -421,7 +505,6 @@ export class Director {
     let nan = false;
     let escaped = 0;
     const startPos = new Map(bodies().map((b) => [b, { x: b.position.x, y: b.position.y }]));
-    this.headless = true;
     for (let t = 0; t < seconds; t += STEP) {
       const s0 = performance.now();
       this.stepRun(run, t, STEP);
@@ -431,7 +514,6 @@ export class Director {
       steps++;
       if (t > 0.1 && t < 0.55) for (const b of bodies()) if (!b.isStatic) maxStartSpeed = Math.max(maxStartSpeed, b.speed);
     }
-    this.headless = false;
     let moved = 0;
     let endSpeed = 0;
     for (const b of bodies()) if (!b.isStatic) endSpeed = Math.max(endSpeed, b.speed);
@@ -442,7 +524,7 @@ export class Director {
       if (p) moved = Math.max(moved, Math.hypot(b.position.x - p.x, b.position.y - p.y));
     }
     const t0 = performance.now();
-    this.applyCamera(run);
+    this.applyCamera(run, 1);
     run.r.render(1, 1 / 60);
     const renderMs = performance.now() - t0;
     this.disposeRun(run);
@@ -473,7 +555,6 @@ export class Director {
     const out: Record<string, unknown>[] = [];
     const end = Math.max(...times);
     let k = 0;
-    this.headless = true;
     for (let t = 0; t <= end + 1e-6; t += STEP) {
       this.stepRun(run, t, STEP);
       while (k < times.length && t >= times[k] - 1e-9) {
@@ -495,7 +576,6 @@ export class Director {
         k++;
       }
     }
-    this.headless = false;
     this.disposeRun(run);
     holder.destroy({ children: true });
     return out;
@@ -503,18 +583,17 @@ export class Director {
 
   // ---------------- rendering ----------------
 
-  private applyCamera(run: Running): void {
-    const c = run.camera;
-    run.camC.pivot.set(c.x + c.shakeX, c.y + c.shakeY);
+  private applyCamera(run: Running, alpha: number): void {
+    const c = run.camera.view(alpha);
+    run.camC.pivot.set(c.x, c.y);
     run.camC.position.set(W / 2, H / 2);
     run.camC.scale.set(c.zoom);
-    run.camC.rotation = c.angle + c.shakeA;
+    run.camC.rotation = c.angle;
   }
 
   private render(alpha: number, dt: number): void {
     for (const run of this.running) {
-      if (dt > 0) run.camera.update(dt);
-      this.applyCamera(run);
+      this.applyCamera(run, alpha);
       run.root.pivot.set(W / 2, H / 2);
       run.root.position.set(W / 2, H / 2);
       run.root.scale.set(1);
@@ -530,24 +609,25 @@ export class Director {
     }
     this.renderSegue(alpha);
     const primary = this.running[this.running.length - 1];
+    let b = { x: 0, y: 0, z: 1 };
     if (primary) {
       // The backdrop's parallax follows the camera, blended across a segue so it never jumps;
       // tall templates (a camera far below the frame) are eased so the sky does not run away.
       const cam = (r: Running) => {
-        const c = r.camera;
+        const c = r.camera.view(alpha);
         const slide = (r.root.x - W / 2) / W;
         const dy = (c.y - H / 2) / H;
         return { x: (c.x - W / 2) / H + slide * 0.5, y: dy / (1 + Math.abs(dy) * 0.8), z: c.zoom };
       };
-      let b = cam(primary);
+      b = cam(primary);
       const prev = this.running[this.running.length - 2];
       if (prev) {
         const a = cam(prev);
-        const e = easeInOutSine(clamp((this.time + alpha * STEP - primary.start) / OVERLAP));
+        const e = easeInOutSine(clamp((this.time + alpha * STEP - primary.start) / primary.segueLen));
         b = { x: a.x + (b.x - a.x) * e, y: a.y + (b.y - a.y) * e, z: a.z + (b.z - a.z) * e };
       }
-      this.stage.bg.update(this.stage.app.renderer, this.visualTime, b.x, b.y, b.z);
     }
+    this.stage.bg.update(this.stage.app.renderer, this.visualTime, b.x, b.y, b.z);
     if (this.stage.finish) this.stage.finish.time = this.visualTime;
   }
 
@@ -555,8 +635,8 @@ export class Director {
     const live = this.running.length >= 2;
     const B = this.running[this.running.length - 1];
     const A = this.running[this.running.length - 2];
-    const p = live ? clamp((this.time + alpha * STEP - B.start) / OVERLAP) : 1;
-    const kind = live ? B.item.segue : null;
+    const p = live ? clamp((this.time + alpha * STEP - B.start) / B.segueLen) : 1;
+    const kind = live ? B.segue : null;
     if (!(live && kind === 'iris' && p < 1) && this.iris.parent) this.iris.parent.removeChild(this.iris);
     if (!live || !kind) return;
     const e = easeInOutSine(p);
@@ -648,9 +728,6 @@ export class Director {
   }
 
   dispose(): void {
-    for (const r of this.running) this.disposeRun(r);
-    if (this.pending) this.disposeRun(this.pending);
-    this.running = [];
-    this.pending = null;
+    this.clear();
   }
 }

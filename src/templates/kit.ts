@@ -794,12 +794,14 @@ export function submergedArea(b: MBody, L: number): number {
 /** Sets a floating body at its equilibrium draft before anything is seen, so it does not bob at the start. */
 export function afloat(b: MBody, w: Water): void {
   const need = massOf(b) / w.density;
+  // The water it displaces raises the level of the whole tank a little: float it at that level.
+  const L = w.level - need / (w.x1 - w.x0);
   let lo = -600;
   let hi = 600;
   for (let i = 0; i < 40; i++) {
     const mid = (lo + hi) / 2;
     Body.translate(b, { x: 0, y: mid });
-    const a = submergedArea(b, w.level);
+    const a = submergedArea(b, L);
     Body.translate(b, { x: 0, y: -mid });
     if (a < need) lo = mid;
     else hi = mid;

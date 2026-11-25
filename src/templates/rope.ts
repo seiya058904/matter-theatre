@@ -11,7 +11,8 @@ const bridge: SceneDef = {
   duration: 12,
   energy: 2,
   endState: 'settle',
-  presettle: 2,
+  // A slack bridge sways for a long while before it hangs still.
+  presettle: 9,
   setup(ctx) {
     const { world, r, tl } = ctx;
     const left = { x: 400, y: 560 };
