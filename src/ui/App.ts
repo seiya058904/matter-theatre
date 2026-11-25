@@ -191,7 +191,7 @@ export class App {
     const side = el('div', 'side');
     side.append(
       button(`${ICON.compose}<span>${t('compose')}</span>`, t('compose'), () => this.toggleCompose(), 'pill quiet compose'),
-      button(ICON.export, t('export'), () => this.openExport(), 'icon'),
+      button(ICON.export, t('export'), () => this.openExport(), 'icon export'),
       button(t('lang'), t('langName'), () => this.toggleLang(), 'icon lang'),
       button(ICON.full, t('fullscreen'), () => this.toggleFull(), 'icon'),
     );
@@ -352,7 +352,9 @@ export class App {
       return;
     }
     const g = W < 1200 ? 10 : 16;
-    const narrow = W < 860;
+    // Narrow or portrait windows stack the library under the monitor instead of beside it.
+    const narrow = W < 860 || H > W * 1.05;
+    document.body.classList.toggle('narrow', narrow);
     const topH = 56;
     const n = Math.max(1, this.cfg.segments.length);
     const stripW = W - g * 2;
@@ -477,7 +479,7 @@ export class App {
       shows,
       button(ICON.shuffle, t('shuffle'), () => this.choose(shuffleShow(new Rng((Math.random() * 1e9) | 0), 12, this.cfg.style)), 'icon'),
       button(ICON.link, t('share'), () => this.share(), 'icon'),
-      button(ICON.export, t('export'), () => this.openExport(), 'icon'),
+      button(ICON.export, t('export'), () => this.openExport(), 'icon export'),
       button(t('lang'), t('langName'), () => this.toggleLang(), 'icon lang'),
       button(t('done'), t('done'), () => this.toggleCompose(false), 'pill'),
     );

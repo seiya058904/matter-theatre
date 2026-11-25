@@ -45,7 +45,7 @@ creators who compose and export.
 | P0 | Bug audit, stability, frame-time spikes, calm starts, headless physics suite | **Done** (`482cb60`) |
 | P1 | Template physics & composition polish | **Done** (`4aea02a`, CI fix, P1 finish) |
 | P2 | Looks, impact feedback, backdrops & segues | **Done** (P2 commit) |
-| P3 | UI art & interaction polish, thumbnails | Not started (thumbnails kept in sync so far) |
+| P3 | UI art & interaction polish, thumbnails | **Done** (P3 commit) |
 
 ## Next up
 
@@ -78,13 +78,19 @@ creators who compose and export.
 Not done (judged unnecessary): new particle kinds or per-look trail changes — live review found them
 fitting already.
 
-### P3 — UI & interaction
+### P3 — UI & interaction — done
 
-- [ ] Unify watch bar, Compose bench, pickers and export dialog: type scale, spacing, icons, contrast,
-      micro-motion. Controls hidden by default, appear quietly on interaction, exit softly.
-- [ ] Keyboard shortcuts, preview/reorder/single-item preview smoothness, export progress & cancel.
-- [ ] Responsive centring across aspect ratios, zoom and fullscreen.
-- [ ] Regenerate thumbnails for any template or look whose opening frame changes (`docs/thumbnails.md`).
+- [x] Reviewed watch bar, Compose, pickers and export dialog: the type scale, spacing and motion were
+      already consistent; controls hide when idle and fade softly. No restyle needed.
+- [x] Responsive fixes: below 860 px the Compose toolbar scrolls with its actions (and Done) pinned
+      right — Done used to be cut off; on phones the watch bar no longer overlaps its buttons, and each
+      action appears once; portrait windows use the stacked layout with 16:9 library cards (cards used
+      to be cropped tall, with titles clipped); keyboard hints hidden on touch-only screens.
+- [x] End-to-end check (Playwright): Compose, segue override, reorder (Alt+←/→), share URL restore,
+      ←/→ and Space, 720p export start with progress and Esc cancel — no console errors.
+- [x] Thumbnails regenerated wherever an opening frame changed (P1: 25, P2: 252).
+
+Not verified: real fullscreen (F) — headless browsers cannot enter it.
 
 ## How to work
 
@@ -121,3 +127,5 @@ fitting already.
 - **2026-11-25 · P2** — Paper/ink/glass body rendering refined, impact feedback by impulse, dimmer
   neon/glass backdrops, cleaner floor-drop and ink-bleed segues; regenerated 252 thumbnails (cartoon
   unchanged).
+- **2026-11-25 · P3** — Responsive Compose/watch bar fixes for narrow, phone and portrait windows;
+  full core-flow check in a real browser.

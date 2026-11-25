@@ -336,13 +336,33 @@ body.composing .toast { top: calc(var(--top-h) + 10px); }
   .transport { gap: 4px; }
   .now em, .clock, .side .compose span { display: none; }
   .wordmark, .gel span { display: none; }
-  .library {
-    left: var(--gap); width: auto; top: calc(var(--mon-y) + var(--mon-h) + 54px); overflow-y: auto; transform: translateY(calc(100% + 60px));
-  }
-  .cards { grid-template-rows: none; grid-auto-rows: 150px; }
   .deck { overflow-x: auto; }
-  .topbar { overflow-x: auto; }
+  /* The tools scroll; the actions (and Done) stay pinned to the right edge. */
+  .topbar { overflow-x: auto; scrollbar-width: none; }
+  .topbar::-webkit-scrollbar { display: none; }
+  .acts { position: sticky; z-index: 2; right: 0; padding-left: 18px; background: linear-gradient(90deg, transparent, var(--booth) 18px); }
 }
+@media (max-width: 560px) {
+  /* Phones: one copy of each action — export on the watch bar, language on the compose bar. */
+  .transport .side .lang, .acts .export { display: none; }
+  .transport { padding: 0 6px; }
+  .mid { grid-template-columns: auto minmax(48px, 1fr); gap: 10px; }
+  .now span, body.composing .now em { display: none; }
+  .topbar { gap: 8px; }
+}
+/* Narrow or portrait windows (set by the layout): the library stands under the monitor. */
+body.narrow .library {
+  left: var(--gap); width: auto; top: calc(var(--mon-y) + var(--mon-h) + 54px); overflow-y: auto; display: block;
+  transform: translateY(calc(100% + 60px));
+}
+body.narrow.composing .library { transform: none; }
+body.narrow .families { margin-bottom: 10px; }
+body.narrow .cards { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); grid-template-rows: none; grid-auto-rows: auto; }
+body.narrow .card { grid-template-rows: auto auto; }
+body.narrow .card .pic { height: 0; padding-top: 56.25%; }
+body.narrow .card .pic img { position: absolute; inset: 0; }
+/* Keyboard hints mean nothing on a touch screen. */
+@media (hover: none) { .hint { display: none; } }
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { transition-duration: 0.01ms !important; animation-duration: 0.01ms !important; }
