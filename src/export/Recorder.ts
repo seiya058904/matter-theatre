@@ -18,38 +18,53 @@ export function pickFormat(): RecFormat | null {
 }
 
 export class Recorder {
-  private rec: MediaRecorder | null = null;
-  private chunks: Blob[] = [];
+  private active: { rec: MediaRecorder; result: Promise<Blob | null>; release: (save: boolean) => void } | null = null;
 
-  start(canvas: HTMLCanvasElement, format: RecFormat, bitsPerSecond: number): void {
+  start(canvas: HTMLCanvasElement, format: RecFormat, bitsPerSecond: number, onError: () => void): void {
     const stream = canvas.captureStream(60);
-    this.chunks = [];
-    this.rec = new MediaRecorder(stream, { mimeType: format.mime, videoBitsPerSecond: bitsPerSecond });
-    this.rec.ondataavailable = (e) => {
-      if (e.data.size) this.chunks.push(e.data);
-    };
-    this.rec.start(500);
+    try {
+      const rec = new MediaRecorder(stream, { mimeType: format.mime, videoBitsPerSecond: bitsPerSecond });
+      const chunks: Blob[] = [];
+      let resolve!: (blob: Blob | null) => void;
+      const result = new Promise<Blob | null>((done) => { resolve = done; });
+      const release = (save: boolean) => {
+        if (this.active?.rec !== rec) return;
+        this.active = null;
+        rec.onstop = rec.onerror = rec.ondataavailable = null;
+        for (const track of stream.getTracks()) track.stop();
+        resolve(save && chunks.length ? new Blob(chunks, { type: rec.mimeType }) : null);
+        chunks.length = 0;
+      };
+      rec.ondataavailable = (e) => {
+        if (e.data.size) chunks.push(e.data);
+      };
+      rec.onstop = () => {
+        release(true);
+      };
+      rec.onerror = () => {
+        release(false);
+        onError();
+      };
+      rec.start(500);
+      this.active = { rec, result, release };
+    } catch (error) {
+      for (const track of stream.getTracks()) track.stop();
+      throw error;
+    }
   }
 
-  stop(): Promise<Blob> {
-    return new Promise((resolve) => {
-      const rec = this.rec;
-      if (!rec) return resolve(new Blob());
-      rec.onstop = () => {
-        rec.stream.getTracks().forEach((t) => t.stop());
-        resolve(new Blob(this.chunks, { type: rec.mimeType }));
-      };
-      rec.stop();
-      this.rec = null;
-    });
+  async stop(): Promise<Blob | null> {
+    const session = this.active;
+    if (!session) return null;
+    if (session.rec.state !== 'inactive') session.rec.stop();
+    return session.result;
   }
 
   cancel(): void {
-    if (!this.rec) return;
-    this.rec.onstop = null;
-    this.rec.stream.getTracks().forEach((t) => t.stop());
-    this.rec.stop();
-    this.rec = null;
+    const session = this.active;
+    if (!session) return;
+    if (session.rec.state !== 'inactive') session.rec.stop();
+    session.release(false);
   }
 }
 

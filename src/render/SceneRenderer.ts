@@ -1,4 +1,4 @@
-import { Container, Graphics, GraphicsContext, MeshRope, Point, RenderTexture, Sprite, Texture, type Renderer } from 'pixi.js';
+import { Container, Graphics, GraphicsContext, GraphicsPath, MeshRope, Point, Polygon, RenderTexture, Sprite, Texture, type Renderer } from 'pixi.js';
 import Matter from 'matter-js';
 import type { Role } from '../core/types';
 import type { Look, Pt, Shape, StyleDef, TrailKind } from '../styles/types';
@@ -95,6 +95,8 @@ class Trail {
   readonly rope: MeshRope;
   private hist: Pt[] = [];
   private points: Point[];
+  private first = 0;
+  private dirty = true;
   constructor(
     readonly n: number,
     kind: TrailKind,
@@ -106,12 +108,19 @@ class Trail {
   ) {
     this.points = Array.from({ length: n }, (_, i) => new Point(x + i * 0.01, y));
     this.rope = new MeshRope({ texture: trailTexture(kind), points: this.points, width, textureScale: 0 });
+    const render = this.rope.onRender!.bind(this.rope);
+    this.rope.onRender = (renderer) => {
+      if (!this.dirty) return;
+      this.dirty = false;
+      render(renderer);
+    };
     this.rope.blendMode = blend;
     this.rope.tint = color;
     for (let i = 0; i < n; i++) this.hist.push({ x, y });
   }
   /** Collapses the trail onto one point (after a headless jump, so it does not draw one long streak). */
   reset(x: number, y: number): void {
+    this.dirty = true;
     for (let i = 0; i < this.n; i++) {
       this.hist[i].x = x;
       this.hist[i].y = y;
@@ -124,23 +133,32 @@ class Trail {
    * at any refresh rate), spread from the last sample to the body; otherwise only the head follows.
    */
   push(x: number, y: number, steps: number): void {
-    const last = this.hist[this.n - 1];
+    const last = this.hist[(this.first + this.n - 1) % this.n];
     const lx = last.x;
     const ly = last.y;
+    if (!steps && x === lx && y === ly) return;
+    this.dirty = true;
     for (let k = 1; k <= steps; k++) {
-      const h = this.hist.shift()!;
+      const h = this.hist[this.first];
       h.x = lx + ((x - lx) * k) / steps;
       h.y = ly + ((y - ly) * k) / steps;
-      this.hist.push(h);
+      if (++this.first === this.n) this.first = 0;
     }
     if (!steps) {
       last.x = x;
       last.y = y;
     }
-    for (let i = 0; i < this.n; i++) {
+    for (let i = 0, j = this.first; i < this.n; i++) {
       // A tiny monotonic offset keeps the rope's normals defined when a body rests.
-      this.points[i].set(this.hist[i].x + i * 0.01, this.hist[i].y + i * 0.003);
+      this.points[i].set(this.hist[j].x + i * 0.01, this.hist[j].y + i * 0.003);
+      if (++j === this.n) j = 0;
     }
+  }
+
+  destroy(): void {
+    const geometry = this.rope.geometry;
+    this.rope.destroy();
+    geometry.destroy(true);
   }
 }
 
@@ -197,7 +215,7 @@ export class BodyView {
   trail: Trail | null = null;
   /** Transform node; holds the body graphic and its impact highlight. */
   readonly node = new Container();
-  gfx: Graphics;
+  gfx!: Graphics;
   hi: Graphics | null = null;
   shadow: Graphics | null = null;
   /** Cartoon squash-and-stretch rig (render only). */
@@ -219,9 +237,7 @@ export class BodyView {
     readonly opts: BodyOpts,
     private style: StyleDef,
     private shadowLayer: Container | null,
-  ) {
-    this.gfx = new Graphics();
-  }
+  ) {}
 
   /** Builds the Pixi side (shared geometry, highlight, shadow). Deferred while a template is off-screen. */
   build(): void {
@@ -297,7 +313,7 @@ export class BodyView {
   destroy(): void {
     this.node.destroy({ children: true });
     this.shadow?.destroy();
-    this.trail?.rope.destroy();
+    this.trail?.destroy();
     this.release();
   }
 }
@@ -322,26 +338,40 @@ export function shapesOf(b: Body): Shape[] {
   });
 }
 
+const blobContours = new WeakMap<Shape, number[]>();
+
 /** Traces a shape path (no fill/stroke). */
 export function traceShape(g: Graphics, s: Shape): Graphics {
   if (s.kind === 'circle') return g.circle(s.x ?? 0, s.y ?? 0, s.r);
-  if (s.kind === 'poly') return g.poly(s.pts.flatMap((p) => [p.x, p.y]), true);
-  return traceSmooth(g, s.pts);
+  if (s.kind === 'poly') return g.poly(s.pts, true);
+  if (s.pts.length < 3) return g;
+  // The same outline can take several fills and strokes. Flatten it once using Pixi's
+  // own quadratic subdivision, then let each layer tessellate that same contour.
+  let points = blobContours.get(s);
+  if (!points) {
+    const path = traceSmooth(new GraphicsPath(), s.pts);
+    const contour = path.shapePath.shapePrimitives[0]?.shape;
+    if (!(contour instanceof Polygon)) return traceSmooth(g, s.pts);
+    points = contour.points;
+    blobContours.set(s, points);
+  }
+  return g.poly(points, true);
 }
 
 /** Closed quadratic spline through midpoints: a soft, organic outline. */
-export function traceSmooth(g: Graphics, pts: Pt[]): Graphics {
+export function traceSmooth<T extends Graphics | GraphicsPath>(g: T, pts: Pt[]): T {
   const n = pts.length;
   if (n < 3) return g;
-  const m = (a: Pt, b: Pt) => ({ x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 });
-  const s = m(pts[n - 1], pts[0]);
-  g.moveTo(s.x, s.y);
+  const a = pts[n - 1];
+  const b = pts[0];
+  g.moveTo((a.x + b.x) / 2, (a.y + b.y) / 2);
   for (let i = 0; i < n; i++) {
     const p = pts[i];
-    const q = m(p, pts[(i + 1) % n]);
-    g.quadraticCurveTo(p.x, p.y, q.x, q.y);
+    const q = pts[(i + 1) % n];
+    g.quadraticCurveTo(p.x, p.y, (p.x + q.x) / 2, (p.y + q.y) / 2);
   }
-  return g.closePath();
+  g.closePath();
+  return g;
 }
 
 interface LinkItem {
@@ -351,6 +381,8 @@ interface LinkItem {
 }
 interface BlobItem {
   bodies: Body[];
+  shape: Extract<Shape, { kind: 'blob' }>;
+  shapes: Shape[];
   look: Look;
   inflate: number;
   front: boolean;
@@ -427,6 +459,7 @@ export class SceneRenderer {
   /** While true, new views queue their Pixi construction instead of building at once. */
   defer = false;
   private queue: BodyView[] = [];
+  private queueHead = 0;
   /** Built views whose geometry has not been tessellated yet. */
   private cold: BodyView[] = [];
 
@@ -481,6 +514,7 @@ export class SceneRenderer {
   }
 
   private finish(v: BodyView): void {
+    if (v.opts.hidden) return;
     v.build();
     if (this.defer) this.cold.push(v);
     const opts = v.opts;
@@ -497,12 +531,16 @@ export class SceneRenderer {
 
   /** Builds up to `n` queued views; returns how many are still waiting. */
   flush(n = Infinity): number {
-    let k = 0;
-    while (this.queue.length && k++ < n) {
-      const v = this.queue.shift()!;
+    const limit = Math.min(this.queue.length, this.queueHead + n);
+    while (this.queueHead < limit) {
+      const v = this.queue[this.queueHead++];
       if (this.views.get(v.body) === v) this.finish(v);
     }
-    return this.queue.length;
+    if (this.queueHead === this.queue.length) {
+      this.queue.length = 0;
+      this.queueHead = 0;
+    }
+    return this.queue.length - this.queueHead;
   }
 
   /**
@@ -533,6 +571,7 @@ export class SceneRenderer {
 
   track(b: Body): void {
     const i = b as Interp;
+    if (this.tracked.has(i)) return;
     i._px = b.position.x;
     i._py = b.position.y;
     i._pa = b.angle;
@@ -568,7 +607,8 @@ export class SceneRenderer {
 
   blob(bodies: Body[], role: Role, hue = 0.5, inflate = 0, front = false): void {
     bodies.forEach((b) => this.track(b));
-    this.blobs.push({ bodies, look: this.look(role, hue, 1), inflate, front });
+    const shape = { kind: 'blob' as const, pts: bodies.map(() => ({ x: 0, y: 0 })) };
+    this.blobs.push({ bodies, shape, shapes: [shape], look: this.look(role, hue, 1), inflate, front });
   }
 
   /** Stops drawing a closed blob (its skin tore and is drawn as an open strip instead). */
@@ -593,11 +633,12 @@ export class SceneRenderer {
   }
 
   // ---------- interpolation ----------
-  ipos(b: Body): Pt {
+  ipos(b: Body, out: Pt = { x: 0, y: 0 }): Pt {
     const i = b as Interp;
-    if (i._px === undefined) return { x: b.position.x, y: b.position.y };
     const a = this.alpha;
-    return { x: i._px + (b.position.x - i._px) * a, y: i._py! + (b.position.y - i._py!) * a };
+    out.x = i._px === undefined ? b.position.x : i._px + (b.position.x - i._px) * a;
+    out.y = i._py === undefined ? b.position.y : i._py + (b.position.y - i._py) * a;
+    return out;
   }
 
   iangle(b: Body): number {
@@ -662,7 +703,7 @@ export class SceneRenderer {
   };
 
   // ---------- frame ----------
-  private syncView(v: BodyView, dt: number): void {
+  private syncView(v: BodyView, dt: number, flashDecay = 1): void {
     const b = v.body as Interp;
     const k = this.alpha;
     const px = b._px === undefined ? b.position.x : b._px + (b.position.x - b._px) * k;
@@ -698,7 +739,7 @@ export class SceneRenderer {
       v.inner.rotation = -dir;
     }
     if (v.hi) {
-      if (dt > 0 && v.flash > 0) v.flash *= Math.pow(0.01, dt);
+      if (dt > 0 && v.flash > 0) v.flash *= flashDecay;
       v.hi.alpha = v.flash;
       v.hi.visible = v.flash > 0.01;
     }
@@ -730,7 +771,8 @@ export class SceneRenderer {
       this.back.clear();
       for (const d of this.backDrawers) d(this.back, dt);
     }
-    for (const v of this.views.values()) this.syncView(v, dt);
+    const flashDecay = dt > 0 ? Math.pow(0.01, dt) : 1;
+    for (const v of this.views.values()) if (v.built) this.syncView(v, dt, flashDecay);
     if (this.links.length) {
       this.linkG.clear();
       for (const l of this.links) {
@@ -743,7 +785,9 @@ export class SceneRenderer {
       this.blobG.clear();
       this.blobFrontG.clear();
       for (const b of this.blobs) {
-        const pts = b.bodies.map((x) => this.ipos(x));
+        const pts = b.shape.pts;
+        blobContours.delete(b.shape);
+        for (let i = 0; i < pts.length; i++) this.ipos(b.bodies[i], pts[i]);
         if (b.inflate) {
           let cx = 0;
           let cy = 0;
@@ -761,7 +805,7 @@ export class SceneRenderer {
             p.y += (dy / d) * b.inflate;
           }
         }
-        this.style.drawBody(b.front ? this.blobFrontG : this.blobG, [{ kind: 'blob', pts }], b.look);
+        this.style.drawBody(b.front ? this.blobFrontG : this.blobG, b.shapes, b.look);
       }
     }
     if (this.frontDrawers.length) {
@@ -781,6 +825,7 @@ export class SceneRenderer {
     for (const v of this.views.values()) v.destroy();
     this.views.clear();
     this.tracked.clear();
+    this.queue.length = 0;
     this.cold.length = 0;
     this.fx.destroy();
     this.root.destroy({ children: true });

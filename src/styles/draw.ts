@@ -41,7 +41,9 @@ export function arcOf(pts: Pt[], from: number, to: number, k = 0.8): Pt[] {
 export function sizeOf(s: Shape): number {
   if (s.kind === 'circle') return s.r;
   const c = centroid(s.pts);
-  return Math.max(...s.pts.map((p) => Math.hypot(p.x - c.x, p.y - c.y)));
+  let radius = -Infinity;
+  for (const p of s.pts) radius = Math.max(radius, Math.hypot(p.x - c.x, p.y - c.y));
+  return radius;
 }
 
 export function jitter(pts: Pt[], amt: number, seed: number): Pt[] {

@@ -93,6 +93,7 @@ export class Director {
   private cfg!: ShowConfig;
   private iris = new Graphics();
   private ink = new InkRevealFilter();
+  private inkFilters = [this.ink];
   private inkArea = new Rectangle(-240, -240, W + 480, H + 480);
   private fadeIn = 1;
   private ended = false;
@@ -108,13 +109,14 @@ export class Director {
 
   /**
    * Loads a running order and plays it from item `startAt`.
-   * - `sync`: prepare at once (exports, QA); the call blocks until the item is ready.
+   * - `sync`: prepare at once (QA); the call blocks until the item is ready.
+   * - `restart`: clear the stage and prepare from the beginning in slices (exports).
    * - `keep`: an edit of the running order; if item `startAt` is the template already playing,
    *   it simply carries on (nothing restarts), otherwise the show jumps there.
    * Otherwise the show jumps: the item is prepared in small slices while the picture keeps playing.
    */
-  load(cfg: ShowConfig, style: StyleDef, startAt = 0, how: { sync?: boolean; keep?: boolean } = {}): void {
-    const look = !this.style || style.id !== this.style.id || cfg.bg !== this.cfg.bg;
+  load(cfg: ShowConfig, style: StyleDef, startAt = 0, how: { sync?: boolean; keep?: boolean; restart?: boolean } = {}): void {
+    const look = !this.stage.usesStyle(style, cfg.bg);
     this.cfg = cfg;
     this.style = style;
     const defs: { def: SceneDef; scale: number; segue?: Segue }[] = [];
@@ -133,6 +135,10 @@ export class Director {
       return;
     }
     const index = clamp(Math.round(startAt), 0, this.items.length - 1);
+    if (how.restart) {
+      this.clear();
+      this.visualTime = 0;
+    }
     if (how.sync) {
       this.clear();
       if (look) this.stage.applyStyle(style, cfg.bg);
@@ -148,14 +154,11 @@ export class Director {
   /** Jumps to item `index` (skips, the progress bar, a cue card). */
   seek(index: number): void {
     if (!this.items.length) return;
-    this.goTo(clamp(Math.round(index), 0, this.items.length - 1), false);
+    this.goTo(clamp(Math.round(index), 0, this.items.length - 1), !this.stage.usesStyle(this.style, this.cfg.bg));
   }
 
   private goTo(index: number, look: boolean): void {
-    if (this.jump) {
-      look = look || this.jump.look;
-      this.disposeRun(this.jump.run);
-    }
+    if (this.jump) this.disposeRun(this.jump.run);
     if (this.pending) this.disposeRun(this.pending);
     this.pending = null;
     this.ended = false;
@@ -244,13 +247,19 @@ export class Director {
     }
     const run = this.jump?.run ?? this.pending;
     if (!run) return;
+    if (!run.r.defer) {
+      if (this.jump && (!this.jump.look || this.curtain >= 1)) this.land(this.jump);
+      return;
+    }
     const t0 = performance.now();
-    let budget = BUDGET_MS;
+    const base = Math.min(BUDGET_MS, this.frameDt * 250);
+    // A fresh launch or recording can prepare faster while there is no scene competing for the frame.
+    let budget = this.running.length ? base : Math.min(BUDGET_MAX, this.frameDt * 700);
     if (run === this.pending) {
       // Spread what is left evenly over the frames before the cut, so none of it lands on the cut.
       const frames = Math.max(1, (this.nextStart - this.time) / Math.max(this.frameDt, 1 / 240));
       const left = run.settle * (this.stepCost.get(run.def.id) ?? 0.8) + run.r.flush(0) * VIEW_MS;
-      budget = clamp((left / frames) * 1.3, BUDGET_MS, BUDGET_MAX);
+      budget = clamp((left / frames) * 1.3, base, BUDGET_MAX);
     }
     const deadline = t0 + budget;
     if (run.settle > 0) {
@@ -265,9 +274,9 @@ export class Director {
     }
     while (run.settle <= 0 && performance.now() < deadline && run.r.flush(6) > 0);
     const cold = run.settle <= 0 && run.r.flush(0) === 0 ? run.r.warm(this.stage.app.renderer, deadline) : 1;
-    if (this.jump && cold === 0 && (!this.jump.look || this.curtain >= 1)) {
+    if (cold === 0) {
       run.r.defer = false;
-      this.land(this.jump);
+      if (this.jump && (!this.jump.look || this.curtain >= 1)) this.land(this.jump);
     }
   }
 
@@ -343,12 +352,15 @@ export class Director {
     this.running = [];
     this.pending = null;
     this.jump = null;
+    this.nextIndex = -1;
     this.acc = 0;
     this.ended = false;
     this.playing = true;
     this.passStart = 0;
     this.time = 0;
     this.vclock = 0;
+    this.curtain = 0;
+    this.iris.removeFromParent();
   }
 
   private toWorld(r: Running, p: { x: number; y: number }): { x: number; y: number } {
@@ -360,7 +372,7 @@ export class Director {
   frame(dtReal: number): void {
     const real = Math.min(Math.max(dtReal, 0), 0.1);
     this.frameDt += (real - this.frameDt) * 0.1;
-    if (this.playing && !this.ended && !(this.jump && !this.running.length)) {
+    if (this.playing && !this.ended && this.running.length) {
       this.acc += real;
       let n = 0;
       while (this.acc >= STEP && n < MAX_STEPS) {
@@ -598,8 +610,6 @@ export class Director {
       run.root.position.set(W / 2, H / 2);
       run.root.scale.set(1);
       run.root.alpha = 1;
-      run.root.mask = null;
-      run.root.filters = null;
       run.r.render(alpha, dt);
       run.inst.afterRender?.();
     }
@@ -637,7 +647,11 @@ export class Director {
     const A = this.running[this.running.length - 2];
     const p = live ? clamp((this.time + alpha * STEP - B.start) / B.segueLen) : 1;
     const kind = live ? B.segue : null;
-    if (!(live && kind === 'iris' && p < 1) && this.iris.parent) this.iris.parent.removeChild(this.iris);
+    if (B && !(kind === 'iris' && p < 1) && B.root.mask) B.root.mask = null;
+    if (B && !(kind === 'ink' && p < 1) && B.root.filters) B.root.filters = null;
+    if (A?.root.mask) A.root.mask = null;
+    if (A?.root.filters) A.root.filters = null;
+    if (!(kind === 'iris' && p < 1) && this.iris.parent) this.iris.removeFromParent();
     if (!live || !kind) return;
     const e = easeInOutSine(p);
     const breath = Math.sin(Math.PI * p);
@@ -694,7 +708,7 @@ export class Director {
         const c = this.toWorld(B, B.inst.entry);
         this.iris.clear().circle(c.x, c.y, Math.max(1, Math.hypot(W, H) * 1.05 * e)).fill(0xffffff);
         if (!this.iris.parent) this.stage.world.addChild(this.iris);
-        B.root.mask = p < 1 ? this.iris : null;
+        if (p < 1 && B.root.mask !== this.iris) B.root.mask = this.iris;
         A.root.alpha = 1 - 0.75 * e;
         A.root.scale.set(1 + 0.03 * e);
         break;
@@ -702,17 +716,17 @@ export class Director {
       case 'ink': {
         const area = this.inkArea;
         const local = B.root.toLocal(B.camC.toGlobal(B.inst.entry));
-        this.ink.origin((local.x - area.x) / area.width, (local.y - area.y) / area.height);
-        this.ink.progress = p;
-        if (p < 1) {
-          B.root.filters = [this.ink];
-          B.root.filterArea = area;
-        }
         // The old scene washes out as the ink spreads, gone just as the front (INK_FRAG: 2.1p − 0.15,
         // plus its ragged edge) reaches the frame's farthest corner — never earlier, which would leave
         // bare paper, and not much later, which would show it through the new scene.
         const ox = (local.x - area.x) / area.width;
         const oy = (local.y - area.y) / area.height;
+        this.ink.origin(ox, oy);
+        this.ink.progress = p;
+        if (p < 1 && !B.root.filters) {
+          B.root.filters = this.inkFilters;
+          B.root.filterArea = area;
+        }
         const asp = area.width / area.height;
         let far = 0;
         for (const [cx, cy] of [[0, 0], [W, 0], [0, H], [W, H]]) far = Math.max(far, Math.hypot(((cx - area.x) / area.width - ox) * asp, (cy - area.y) / area.height - oy));

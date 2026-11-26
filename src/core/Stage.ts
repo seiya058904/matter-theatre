@@ -26,6 +26,7 @@ export class Stage {
   style: StyleDef | null = null;
   scale = 1;
   private fixed: { w: number; h: number } | null = null;
+  private bgIndex = -1;
   private level = 0;
   private frames: number[] = [];
   private cooldown = 0;
@@ -45,10 +46,12 @@ export class Stage {
     });
     host.appendChild(this.app.canvas);
     this.world.addChild(this.scenes, this.overlay);
+    this.app.stage.eventMode = 'none';
     this.curtain.visible = false;
     this.app.stage.addChild(this.bg.sprite, this.world, this.curtain);
     this.app.stage.filterArea = this.app.screen;
     this.app.renderer.on('resize', () => this.layout());
+    this.app.canvas.addEventListener('webglcontextrestored', () => this.layout());
     this.layout();
   }
 
@@ -81,12 +84,20 @@ export class Stage {
   }
 
   applyStyle(style: StyleDef, bgIndex: number): void {
+    if (this.usesStyle(style, bgIndex)) return;
+    const newLook = this.style !== style;
     this.style = style;
+    this.bgIndex = bgIndex;
     this.bg.set(style.backgrounds[bgIndex] ?? style.backgrounds[0]);
+    if (!newLook) return;
     this.finish?.destroy();
     this.finish = new FinishFilter(style.finish);
     this.finish.res = this.resolution;
     this.app.stage.filters = [this.finish];
+  }
+
+  usesStyle(style: StyleDef, bgIndex: number): boolean {
+    return this.style === style && this.bgIndex === bgIndex;
   }
 
   /** Called once per frame with the real frame time (ms). */

@@ -8,7 +8,7 @@ import { css, ramp } from '../styles/color';
 import { LINKS, type LinkMode, type Segue, type ShowConfig } from '../show/ShowConfig';
 import { PRESETS, shuffleShow } from '../show/presets';
 import { encodeShow } from '../show/serialize';
-import { Recorder, download, pickFormat } from '../export/Recorder';
+import { Recorder, download, pickFormat, type RecFormat } from '../export/Recorder';
 import { getLang, setLang, t, type Key } from './i18n';
 
 const svg = (d: string, fill = false) => `<svg viewBox="0 0 24 24" class="${fill ? 'f' : 's'}" aria-hidden="true">${d}</svg>`;
@@ -62,6 +62,16 @@ function button(html: string, label: string, onClick: (e: MouseEvent) => void, c
 }
 
 const fmt = (s: number) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
+
+interface Recording {
+  format: RecFormat;
+  bitrate: number;
+  started: boolean;
+  timer?: number;
+  second: number;
+  label: HTMLElement;
+  progress: HTMLElement;
+}
 const pad = (n: number) => String(n).padStart(2, '0');
 const clone = <T,>(v: T): T => JSON.parse(JSON.stringify(v));
 const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
@@ -98,6 +108,9 @@ export class App {
   private playBtn!: HTMLButtonElement;
   private now = el('div', 'now');
   private clock = el('span', 'clock');
+  private clockSecond = -1;
+  private barSegments: HTMLElement[] = [];
+  private highlightedSegment: HTMLElement | undefined;
   private monitor = el('div', 'monitor');
   private top = el('header', 'topbar');
   private library = el('aside', 'library');
@@ -112,10 +125,11 @@ export class App {
   private thumbQueue: { def: SceneDef; imgs: HTMLImageElement[] }[] = [];
   private thumbBusy = false;
   private thumbGen = 0;
-  private recording = false;
+  private recording: Recording | null = null;
   private recorder = new Recorder();
-  private lastIndex = -1;
   private composing = false;
+  private cues: HTMLElement[] = [];
+  private liveCue: HTMLElement | undefined;
   private reorder: Reorder | null = null;
   private recBox: HTMLElement | null = null;
 
@@ -175,8 +189,7 @@ export class App {
   }
 
   private onItem(): void {
-    this.renderBar();
-    if (this.composing) this.markStrip();
+    if (this.highlightedSegment !== this.barSegments[this.director.currentIndex]) this.markBar();
   }
 
   // ---------------- transport (both states) ----------------
@@ -185,6 +198,7 @@ export class App {
     this.transport.innerHTML = '';
     this.bar = el('div', 'bar');
     this.barHead = el('i', 'bar-head');
+    this.barSegments = [];
     this.playBtn = button(ICON.pause, t('pause'), () => this.togglePlay(), 'icon play');
     const keys = el('div', 'keys');
     keys.append(button(ICON.prev, t('prev'), () => this.step(-1)), this.playBtn, button(ICON.next, t('next'), () => this.step(1)));
@@ -217,37 +231,49 @@ export class App {
   /** The show's progress line: one segment per template, in the look's colours. */
   private renderBar(): void {
     const d = this.director;
-    this.bar.querySelectorAll('.seg').forEach((n) => n.remove());
+    for (const seg of this.barSegments) seg.remove();
     const lang = getLang();
     const st = styleById(this.cfg.style);
-    d.items.forEach((it, i) => {
-      const seg = el('span', 'seg' + (i === d.currentIndex ? ' on' : ''));
+    this.barSegments = d.items.map((it, i) => {
+      const seg = el('span', 'seg');
       seg.style.left = `${(it.start / Math.max(d.total, 1e-6)) * 100}%`;
       seg.style.width = `${(it.dur / Math.max(d.total, 1e-6)) * 100}%`;
       seg.style.setProperty('--c', css(ramp(st.ramp, d.items.length > 1 ? i / (d.items.length - 1) : 0.5)));
       seg.dataset.label = `${pad(i + 1)}  ${it.def.title[lang]}`;
       this.bar.insertBefore(seg, this.barHead);
+      return seg;
     });
+    this.markBar();
+    this.clockSecond = -1;
+  }
+
+  private markBar(): void {
+    const d = this.director;
+    this.highlightedSegment?.classList.remove('on');
+    this.highlightedSegment = this.barSegments[d.currentIndex];
+    this.highlightedSegment?.classList.add('on');
+    const lang = getLang();
     const cur = d.items[d.currentIndex];
     this.now.innerHTML = cur ? `<b>${pad(d.currentIndex + 1)}</b><span>${cur.def.title[lang]}</span><em>${cur.def.law[lang]}</em>` : '';
   }
 
   tick(): void {
     const d = this.director;
+    const cue = this.cues[d.currentIndex];
+    if (this.highlightedSegment !== this.barSegments[d.currentIndex]) this.markBar();
+    if (this.composing && cue !== this.liveCue) this.markStrip();
     if (d.total > 0) {
       const p = Math.min(1, d.passTime / d.total);
       this.barHead.style.left = `${p * 100}%`;
-      this.clock.textContent = `${fmt(d.passTime)} / ${fmt(d.total)}`;
+      const second = Math.floor(d.passTime);
+      if (second !== this.clockSecond) {
+        this.clockSecond = second;
+        this.clock.textContent = `${fmt(second)} / ${fmt(d.total)}`;
+      }
       if (this.composing) {
         const it = d.items[d.currentIndex];
-        const card = this.strip.querySelector<HTMLElement>(`.cue[data-i="${d.currentIndex}"]`);
-        if (it && card) card.style.setProperty('--p', String(clamp((d.passTime - it.start) / it.dur, 0, 1)));
+        if (it && cue) cue.style.setProperty('--p', String(clamp((d.passTime - it.start) / it.dur, 0, 1)));
       }
-    }
-    if (d.currentIndex !== this.lastIndex) {
-      this.lastIndex = d.currentIndex;
-      this.renderBar();
-      if (this.composing) this.markStrip();
     }
     const playing = d.playing;
     if (this.playBtn.dataset.state !== String(playing)) {
@@ -256,7 +282,7 @@ export class App {
       this.playBtn.title = playing ? t('pause') : t('play');
       this.playBtn.setAttribute('aria-label', this.playBtn.title);
     }
-    if (this.recording) this.updateRecProgress();
+    if (this.recording) this.tickRecording(this.recording);
   }
 
   private step(dir: 1 | -1): void {
@@ -296,7 +322,7 @@ export class App {
       const tag = (e.target as HTMLElement)?.tagName;
       if (tag === 'INPUT' || tag === 'TEXTAREA') return;
       if (this.recording) {
-        if (e.key === 'Escape') this.stopRecording(true);
+        if (e.key === 'Escape') this.stopRecording('cancel');
         return;
       }
       if (e.code === 'Space' && !(e.target as HTMLElement)?.closest('button')) {
@@ -417,10 +443,11 @@ export class App {
    * Thumbnails ship pre-rendered (public/thumbs/<look>/<id>.jpg), so composing never simulates
    * anything. Only a missing file falls back to rendering one in idle time.
    */
-  private thumb(def: SceneDef): HTMLImageElement {
+  private thumb(def: SceneDef, lazy = false): HTMLImageElement {
     const img = el('img');
     img.alt = '';
     img.decoding = 'async';
+    if (lazy) img.loading = 'lazy';
     img.draggable = false;
     const key = this.cfg.style + '/' + this.cfg.bg + '/' + def.id;
     const cached = this.thumbs.get(key);
@@ -431,6 +458,7 @@ export class App {
     img.addEventListener(
       'error',
       () => {
+        if (!this.composing || !img.isConnected || key !== `${this.cfg.style}/${this.cfg.bg}/${def.id}`) return;
         const q = this.thumbQueue.find((x) => x.def === def);
         if (q) q.imgs.push(img);
         else this.thumbQueue.push({ def, imgs: [img] });
@@ -490,6 +518,8 @@ export class App {
   private renderStrip(): void {
     const lang = getLang();
     this.strip.innerHTML = '';
+    this.cues = [];
+    this.liveCue = undefined;
     this.strip.classList.toggle('empty', !this.cfg.segments.length);
     if (!this.cfg.segments.length) {
       const e = el('li', 'strip-empty');
@@ -509,7 +539,7 @@ export class App {
       li.setAttribute('aria-label', li.title);
       li.style.setProperty('--c', css(ramp(st.ramp, n > 1 ? i / (n - 1) : 0.5)));
       const pic = el('div', 'pic');
-      pic.append(this.thumb(def), el('b', 'num', pad(i + 1)), el('span', 'grip', ICON.grip));
+      pic.append(this.thumb(def, true), el('b', 'num', pad(i + 1)), el('span', 'grip', ICON.grip));
       const len = button(t(`len${seg.len}` as Key), t('lenTitle'), () => this.update((c) => (c.segments[i].len = ((seg.len + 1) % 3) as 0 | 1 | 2)), 'len' + (seg.len !== 1 ? ' set' : ''));
       const rm = button(ICON.close, t('remove'), () => this.removeAt(i), 'rm');
       li.append(pic, len, rm);
@@ -523,6 +553,7 @@ export class App {
         }
       });
       this.strip.append(li);
+      this.cues[i] = li;
       this.strip.append(this.knob((i + 1) % n, i === n - 1));
     });
     this.markStrip();
@@ -570,12 +601,10 @@ export class App {
   }
 
   private markStrip(): void {
-    const cur = this.director.currentIndex;
-    this.strip.querySelectorAll<HTMLElement>('.cue').forEach((n) => {
-      const on = Number(n.dataset.i) === cur;
-      n.classList.toggle('live', on);
-      if (on) n.style.setProperty('--p', '0');
-    });
+    this.liveCue?.classList.remove('live');
+    this.liveCue = this.cues[this.director.currentIndex];
+    this.liveCue?.classList.add('live');
+    this.liveCue?.style.setProperty('--p', '0');
   }
 
   // ---------------- drag to reorder (cards follow the pointer) ----------------
@@ -865,7 +894,7 @@ export class App {
     const gen = this.thumbGen;
     const run = () => {
       const key = this.cfg.style + '/' + this.cfg.bg + '/' + next.def.id;
-      if (gen !== this.thumbGen) {
+      if (gen !== this.thumbGen || !this.composing) {
         this.thumbBusy = false;
         this.pumpThumbs();
         return;
@@ -873,7 +902,8 @@ export class App {
       try {
         const url = this.thumbs.get(key) ?? this.director.thumbnail(next.def, 320);
         this.thumbs.set(key, url);
-        for (const img of next.imgs) img.src = url;
+        if (this.thumbs.size > 32) this.thumbs.delete(this.thumbs.keys().next().value!);
+        for (const img of next.imgs) if (img.isConnected) img.src = url;
       } catch (err) {
         console.warn('thumbnail failed', next.def.id, err);
       }
@@ -896,6 +926,7 @@ export class App {
   // ---------------- export ----------------
 
   private openExport(): void {
+    if (this.recording || !this.director.items.length) return;
     const fmtInfo = pickFormat();
     const dlg = el('div', 'modal');
     const box = el('div', 'dialog');
@@ -942,44 +973,74 @@ export class App {
 
   private startRecording(w: number, h: number): void {
     const format = pickFormat();
-    if (!format) return;
+    if (!format || this.recording || !this.director.items.length) return;
     this.toggleCompose(false);
-    this.recording = true;
     document.body.classList.add('recording');
     this.stage.lockSize(w, h);
     this.director.loop = false;
-    this.director.load(this.cfg, styleById(this.cfg.style), 0, { sync: true });
-    this.recorder.start(this.stage.app.canvas as HTMLCanvasElement, format, w >= 1920 ? 16e6 : 8e6);
     this.recBox = el('div', 'recbox');
+    const label = el('span');
+    const progress = el('em');
+    label.textContent = `${t('preparingRecording')}　Esc ${t('cancel')}`;
+    this.recBox.append(el('i'), label, progress);
     this.root.append(this.recBox);
-    this.director.onEnd = () => setTimeout(() => this.stopRecording(false), 1200);
+    const session: Recording = { format, bitrate: w >= 1920 ? 16e6 : 8e6, started: false, second: -1, label, progress };
+    this.recording = session;
+    this.director.load(this.cfg, styleById(this.cfg.style), 0, { restart: true });
+    this.director.onEnd = () => {
+      session.timer = window.setTimeout(() => this.stopRecording('finish'), 1200);
+    };
   }
 
-  private updateRecProgress(): void {
-    if (!this.recBox) return;
+  private tickRecording(session: Recording): void {
     const d = this.director;
+    if (!session.started) {
+      if (d.preparing) return;
+      try {
+        this.recorder.start(this.stage.app.canvas as HTMLCanvasElement, session.format, session.bitrate, () => this.stopRecording('error'));
+        session.started = true;
+      } catch {
+        this.stopRecording('error');
+        return;
+      }
+    }
     const p = Math.min(1, d.time / d.total);
-    this.recBox.innerHTML = `<i></i><span>${t('recording')}　${fmt(d.time)} / ${fmt(d.total)}　Esc ${t('cancel')}</span><em style="width:${p * 100}%"></em>`;
+    session.progress.style.width = `${p * 100}%`;
+    const second = Math.floor(d.time);
+    if (second !== session.second) {
+      session.second = second;
+      session.label.textContent = `${t('recording')}　${fmt(second)} / ${fmt(d.total)}　Esc ${t('cancel')}`;
+    }
   }
 
-  private async stopRecording(cancel: boolean): Promise<void> {
-    if (!this.recording) return;
-    this.recording = false;
+  private async stopRecording(mode: 'finish' | 'cancel' | 'error'): Promise<void> {
+    const session = this.recording;
+    if (!session) return;
+    clearTimeout(session.timer);
     this.director.onEnd = null;
-    this.director.loop = true;
-    const format = pickFormat()!;
-    if (cancel) this.recorder.cancel();
-    else {
-      const blob = await this.recorder.stop();
-      const stamp = new Date().toISOString().slice(0, 16).replace(/[-:T]/g, '');
-      download(blob, `matter-theatre-${this.cfg.style}-${stamp}.${format.ext}`);
-      this.toast(t('exported'));
+    let blob: Blob | null = null;
+    if (mode === 'finish') {
+      try {
+        blob = await this.recorder.stop();
+      } catch {
+        this.recorder.cancel();
+      }
+      if (this.recording !== session) return;
+    } else {
+      this.recorder.cancel();
     }
+    this.recording = null;
+    this.director.loop = true;
     this.recBox?.remove();
     this.recBox = null;
     document.body.classList.remove('recording');
     this.stage.unlockSize();
     this.director.seek(0);
     this.layout();
+    if (blob) {
+      const stamp = new Date().toISOString().slice(0, 16).replace(/[-:T]/g, '');
+      download(blob, `matter-theatre-${this.cfg.style}-${stamp}.${session.format.ext}`);
+      this.toast(t('exported'));
+    } else if (mode !== 'cancel') this.toast(t('exportFailed'));
   }
 }

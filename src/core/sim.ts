@@ -4,6 +4,7 @@ import { Camera } from './Camera';
 import { Timeline } from './Timeline';
 import { Rng, hashString } from './rng';
 import { smooth } from './ease';
+import { updatePhysics } from './physics';
 import { STEP, type SceneContext, type SceneDef, type SceneInstance } from './types';
 import type { SceneRenderer } from '../render/SceneRenderer';
 import type { StyleDef } from '../styles/types';
@@ -105,9 +106,10 @@ export function settleStep(sim: Sim): void {
   const was = sim.r.impactsEnabled;
   sim.r.impactsEnabled = false;
   sim.r.fx.muted = true;
-  sim.r.snapshot();
+  // Only the last off-screen pose is needed for the first visible interpolation.
+  if (sim.settle === 1) sim.r.snapshot();
   for (const f of sim.forces) f();
-  Matter.Engine.update(sim.engine, STEP * 1000);
+  updatePhysics(sim.engine, STEP * 1000);
   sim.r.impactsEnabled = was;
   sim.r.fx.muted = false;
   sim.settle--;
@@ -147,7 +149,7 @@ export function stepSim(sim: Sim, local: number, dt: number, before?: () => void
   sim.inst.step?.(local, dt);
   before?.();
   for (const f of sim.forces) f();
-  Matter.Engine.update(sim.engine, dt * 1000);
+  updatePhysics(sim.engine, dt * 1000);
   // The camera moves on the template's clock too, so framing is identical live and in an export.
   sim.camera.update(dt);
 }

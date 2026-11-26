@@ -46,6 +46,7 @@ creators who compose and export.
 | P1 | Template physics & composition polish | **Done** (`4aea02a`, CI fix, P1 finish) |
 | P2 | Looks, impact feedback, backdrops & segues | **Done** (P2 commit) |
 | P3 | UI art & interaction polish, thumbnails | **Done** (P3 commit) |
+| P4 | Physics and rendering performance, resource lifecycle, export | **Done** ([performance audit](performance-audit.md)) |
 
 ## Next up
 
@@ -101,6 +102,9 @@ Not verified: real fullscreen (F) — headless browsers cannot enter it.
 - **Headless suites** (`tests/`): `physics.test.ts` (health + determinism), `outcomes.test.ts` (story
   payloads arrive), `templates.test.ts`, `core.test.ts`. `REVIEW=1 npx vitest run tests/zz-review.test.ts
   --reporter=verbose` prints wake/peak/tail/framing per template (`IDS=a,b` to filter).
+- **Physics benchmark**: set `BENCHMARK=1` and run `npx vitest run tests/zz-benchmark.test.ts
+  --disableConsoleIntercept`. The benchmark alternates stock Matter detection and cached SAT.
+  `sat.test.ts` compares contact order and body state frame by frame.
 - **Contact sheets** (visual review): in the dev page (`?pause&only=galton`), call
   `__mt.director.snapshot(def, t, width)` for several times `t` per template, draw them onto one canvas
   and screenshot it with Playwright. Snapshots show bodies but not trails.
@@ -140,3 +144,6 @@ Not verified: real fullscreen (F) — headless browsers cannot enter it.
   ball in ~1 of 4 runs); wider gaps and a softer rim give a margin. Also tied the ink-bleed fade to the
   ink front. Lesson: an outcome test must check the state is stable (and run at every cue length), not
   sample one instant.
+- **2026-11-26 · P4** — Cached SAT projections for dense scenes, reused soft-body outlines, released
+  trail GPU buffers at scene disposal, and sliced preparation for export. Browser regression covered
+  all 315 visual combinations and seven segues, and exported 720p and 1080p files.

@@ -14,8 +14,8 @@ export class BackgroundLayer {
   private holder = new Container();
   private rt: RenderTexture | null = null;
   private u: Record<string, unknown>;
-  private w = 1;
-  private h = 1;
+  private mode = -1;
+  private dirty = true;
   scale = 0.5;
 
   constructor() {
@@ -46,6 +46,8 @@ export class BackgroundLayer {
   }
 
   set(bg: BgDef): void {
+    this.mode = bg.mode;
+    this.dirty = true;
     this.u.uMode = bg.mode;
     (this.u.uColA as Float32Array).set(vec3(bg.colors[0]));
     (this.u.uColB as Float32Array).set(vec3(bg.colors[1]));
@@ -53,8 +55,7 @@ export class BackgroundLayer {
   }
 
   resize(w: number, h: number): void {
-    this.w = w;
-    this.h = h;
+    this.dirty = true;
     const tw = Math.max(2, Math.round(w * this.scale));
     const th = Math.max(2, Math.round(h * this.scale));
     if (!this.rt || this.rt.width !== tw || this.rt.height !== th) {
@@ -70,10 +71,16 @@ export class BackgroundLayer {
   }
 
   update(renderer: Renderer, time: number, camX: number, camY: number, zoom: number): void {
+    const cam = this.u.uCam as Float32Array;
+    // These backdrops depend on the camera but have no time-dependent terms.
+    const staticTime = this.mode === 2 || this.mode === 3 || this.mode === 7;
+    if (!this.rt || (!this.dirty && (staticTime || this.u.uTime === time) &&
+      cam[0] === Math.fround(camX) && (this.mode === 7 || cam[1] === Math.fround(camY)))) return;
+    this.dirty = false;
     this.u.uTime = time;
-    (this.u.uCam as Float32Array).set([camX, camY, zoom]);
-    if (this.rt) renderer.render({ container: this.holder, target: this.rt, clear: true });
-    this.sprite.width = this.w;
-    this.sprite.height = this.h;
+    cam[0] = camX;
+    cam[1] = camY;
+    cam[2] = zoom;
+    renderer.render({ container: this.holder, target: this.rt, clear: true });
   }
 }
